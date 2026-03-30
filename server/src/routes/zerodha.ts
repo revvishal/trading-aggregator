@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
+import { pool } from '../db';
 
-// kiteconnect uses CommonJS default export
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const KiteConnect = require('kiteconnect').KiteConnect;
 
@@ -10,10 +10,8 @@ const KITE_API_KEY = process.env.KITE_API_KEY || '';
 const KITE_API_SECRET = process.env.KITE_API_SECRET || '';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
-// Kite Connect instance — persisted across requests
 let kite = new KiteConnect({ api_key: KITE_API_KEY });
 
-// Store session state
 let sessionState = {
   accessToken: '',
   publicToken: '',
@@ -23,10 +21,60 @@ let sessionState = {
 };
 
 /**
- * GET /api/zerodha/status
- * Check if Zerodha Kite is connected (has valid access token)
+ * Restore Kite session from DB on first status check or server start.
+ * Kite tokens are valid for one trading day (until ~6 AM IST next day).
  */
-router.get('/status', (_req: Request, res: Response) => {
+async function restoreSessionFromDb(): Promise<boolean> {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM kite_sessions ORDER BY login_time DESC LIMIT 1'
+    );
+    if (result.rows.length === 0) return false;
+
+    const row = result.rows[0];
+    const loginTime = new Date(row.login_time);
+    const now = new Date();
+
+    // Check if token is from today (IST = UTC+5:30). Tokens expire ~6 AM IST.
+    const istOffset = 5.5 * 60 * 60 * 1000;
+    const loginIST = new Date(loginTime.getTime() + istOffset);
+    const nowIST = new Date(now.getTime() + istOffset);
+
+    // If login was today (same IST date) and before 6 AM cutoff, session is valid
+    const sameDay = loginIST.toDateString() === nowIST.toDateString();
+    const withinHours = (now.getTime() - loginTime.getTime()) < 24 * 60 * 60 * 1000;
+
+    if (sameDay || withinHours) {
+      sessionState = {
+        accessToken: row.access_token,
+        publicToken: row.public_token || '',
+        userId: row.user_id,
+        loginTime: row.login_time.toISOString(),
+        isConnected: true,
+      };
+      kite.setAccessToken(row.access_token);
+      console.log(`[ZERODHA] ✓ Restored session for ${row.user_id} from DB`);
+      return true;
+    } else {
+      // Expired — clean up
+      await pool.query('DELETE FROM kite_sessions WHERE id = $1', [row.id]);
+      console.log('[ZERODHA] Stale session removed from DB');
+      return false;
+    }
+  } catch (err: any) {
+    console.error('[ZERODHA] Error restoring session:', err.message);
+    return false;
+  }
+}
+
+// Try to restore on module load (async, best-effort)
+restoreSessionFromDb();
+
+router.get('/status', async (_req: Request, res: Response) => {
+  // If not connected in memory, try DB restore
+  if (!sessionState.isConnected) {
+    await restoreSessionFromDb();
+  }
   res.json({
     connected: sessionState.isConnected,
     userId: sessionState.userId,
@@ -35,42 +83,26 @@ router.get('/status', (_req: Request, res: Response) => {
   });
 });
 
-/**
- * GET /api/zerodha/login
- * Redirects user to Kite Connect login page.
- * After login, Kite redirects back to /api/zerodha/callback
- */
 router.get('/login', (_req: Request, res: Response) => {
   if (!KITE_API_KEY || KITE_API_KEY === 'your_api_key_here') {
-    res.status(400).json({
-      error: 'KITE_API_KEY not configured. Set it in server/.env file.',
-    });
+    res.status(400).json({ error: 'KITE_API_KEY not configured.' });
     return;
   }
-
   const loginUrl = kite.getLoginURL();
   console.log(`[ZERODHA] Redirecting to Kite login: ${loginUrl}`);
   res.redirect(loginUrl);
 });
 
-/**
- * GET /api/zerodha/callback
- * Handles the redirect from Kite Connect after user login.
- * Exchanges request_token for access_token.
- */
 router.get('/callback', async (req: Request, res: Response) => {
   const requestToken = req.query.request_token as string;
   const status = req.query.status as string;
 
   if (status !== 'success' || !requestToken) {
-    console.error('[ZERODHA] Login failed or cancelled. Status:', status);
     res.redirect(`${FRONTEND_URL}?zerodha_status=error&message=Login+failed+or+cancelled`);
     return;
   }
 
   try {
-    console.log('[ZERODHA] Exchanging request_token for access_token...');
-
     const session = await kite.generateSession(requestToken, KITE_API_SECRET);
 
     sessionState = {
@@ -80,13 +112,16 @@ router.get('/callback', async (req: Request, res: Response) => {
       loginTime: new Date().toISOString(),
       isConnected: true,
     };
-
-    // Set access token on the kite instance for subsequent API calls
     kite.setAccessToken(session.access_token);
 
-    console.log(`[ZERODHA] ✓ Connected as ${sessionState.userId}`);
+    // Persist session to DB (upsert by user_id)
+    await pool.query('DELETE FROM kite_sessions WHERE user_id = $1', [sessionState.userId]);
+    await pool.query(
+      'INSERT INTO kite_sessions (user_id, access_token, public_token, login_time) VALUES ($1, $2, $3, $4)',
+      [sessionState.userId, sessionState.accessToken, sessionState.publicToken, sessionState.loginTime]
+    );
 
-    // Redirect back to frontend with success status
+    console.log(`[ZERODHA] ✓ Connected as ${sessionState.userId} — session persisted`);
     res.redirect(`${FRONTEND_URL}?zerodha_status=success&user=${sessionState.userId}`);
   } catch (error: any) {
     console.error('[ZERODHA] Token exchange failed:', error.message || error);
@@ -95,175 +130,87 @@ router.get('/callback', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * POST /api/zerodha/disconnect
- * Clear the stored session / access token
- */
-router.post('/disconnect', (_req: Request, res: Response) => {
-  sessionState = {
-    accessToken: '',
-    publicToken: '',
-    userId: '',
-    loginTime: '',
-    isConnected: false,
-  };
-  // Re-create kite instance without access token
+router.post('/disconnect', async (_req: Request, res: Response) => {
+  if (sessionState.userId) {
+    await pool.query('DELETE FROM kite_sessions WHERE user_id = $1', [sessionState.userId]).catch(() => {});
+  }
+  sessionState = { accessToken: '', publicToken: '', userId: '', loginTime: '', isConnected: false };
   kite = new KiteConnect({ api_key: KITE_API_KEY });
-  console.log('[ZERODHA] Disconnected');
+  console.log('[ZERODHA] Disconnected — session removed from DB');
   res.json({ success: true });
 });
 
-// ==========================================
-// Middleware: Check connection before API calls
-// ==========================================
-function requireConnection(req: Request, res: Response, next: Function) {
+function requireConnection(_req: Request, res: Response, next: Function) {
   if (!sessionState.isConnected || !sessionState.accessToken) {
-    res.status(401).json({
-      error: 'Not connected to Zerodha. Please login first.',
-      connected: false,
-    });
+    res.status(401).json({ error: 'Not connected to Zerodha.', connected: false });
     return;
   }
   next();
 }
 
-/**
- * GET /api/zerodha/orders
- * Fetch today's orders from Zerodha
- */
 router.get('/orders', requireConnection, async (_req: Request, res: Response) => {
   try {
     const orders = await kite.getOrders();
-
-    // Map Kite order format to our ZerodhaOrder format
     const mapped = orders.map((order: any) => ({
-      id: order.order_id,
-      orderId: order.order_id,
-      ticker: order.tradingsymbol,
-      exchange: order.exchange,
-      type: order.transaction_type, // BUY or SELL
-      quantity: order.quantity,
-      price: order.average_price || order.price || 0,
+      id: order.order_id, orderId: order.order_id, ticker: order.tradingsymbol, exchange: order.exchange,
+      type: order.transaction_type, quantity: order.quantity, price: order.average_price || order.price || 0,
       timestamp: order.order_timestamp || order.exchange_timestamp || new Date().toISOString(),
-      status: order.status, // COMPLETE, OPEN, CANCELLED, REJECTED
-      productType: order.product, // CNC, MIS, NRML
-      instrumentType: order.instrument_type || 'EQ',
+      status: order.status, productType: order.product, instrumentType: order.instrument_type || 'EQ',
     }));
-
-    console.log(`[ZERODHA] Fetched ${mapped.length} orders`);
     res.json({ orders: mapped, count: mapped.length });
   } catch (error: any) {
-    console.error('[ZERODHA] Error fetching orders:', error.message || error);
     handleKiteError(error, res);
   }
 });
 
-/**
- * GET /api/zerodha/holdings
- * Fetch portfolio holdings from Zerodha
- */
 router.get('/holdings', requireConnection, async (_req: Request, res: Response) => {
   try {
     const holdings = await kite.getHoldings();
-
     const mapped = holdings.map((h: any) => ({
-      ticker: h.tradingsymbol,
-      exchange: h.exchange,
-      quantity: h.quantity,
-      averagePrice: h.average_price,
-      lastPrice: h.last_price,
-      pnl: h.pnl,
-      dayChange: h.day_change,
-      dayChangePercent: h.day_change_percentage,
+      ticker: h.tradingsymbol, exchange: h.exchange, quantity: h.quantity, averagePrice: h.average_price,
+      lastPrice: h.last_price, pnl: h.pnl, dayChange: h.day_change, dayChangePercent: h.day_change_percentage,
     }));
-
-    console.log(`[ZERODHA] Fetched ${mapped.length} holdings`);
     res.json({ holdings: mapped, count: mapped.length });
   } catch (error: any) {
-    console.error('[ZERODHA] Error fetching holdings:', error.message || error);
     handleKiteError(error, res);
   }
 });
 
-/**
- * GET /api/zerodha/positions
- * Fetch day/net positions from Zerodha
- */
 router.get('/positions', requireConnection, async (_req: Request, res: Response) => {
   try {
     const positions = await kite.getPositions();
-
-    const mapped = {
-      net: (positions.net || []).map((p: any) => ({
-        ticker: p.tradingsymbol,
-        exchange: p.exchange,
-        quantity: p.quantity,
-        averagePrice: p.average_price,
-        lastPrice: p.last_price,
-        pnl: p.pnl,
-        buyQuantity: p.buy_quantity,
-        sellQuantity: p.sell_quantity,
-        buyPrice: p.buy_price,
-        sellPrice: p.sell_price,
-        product: p.product,
-      })),
-      day: (positions.day || []).map((p: any) => ({
-        ticker: p.tradingsymbol,
-        exchange: p.exchange,
-        quantity: p.quantity,
-        averagePrice: p.average_price,
-        lastPrice: p.last_price,
-        pnl: p.pnl,
-        buyQuantity: p.buy_quantity,
-        sellQuantity: p.sell_quantity,
-        buyPrice: p.buy_price,
-        sellPrice: p.sell_price,
-        product: p.product,
-      })),
-    };
-
-    console.log(`[ZERODHA] Fetched ${mapped.net.length} net, ${mapped.day.length} day positions`);
-    res.json({ positions: mapped });
+    const mapPos = (p: any) => ({
+      ticker: p.tradingsymbol, exchange: p.exchange, quantity: p.quantity, averagePrice: p.average_price,
+      lastPrice: p.last_price, pnl: p.pnl, buyQuantity: p.buy_quantity, sellQuantity: p.sell_quantity,
+      buyPrice: p.buy_price, sellPrice: p.sell_price, product: p.product,
+    });
+    res.json({ positions: { net: (positions.net || []).map(mapPos), day: (positions.day || []).map(mapPos) } });
   } catch (error: any) {
-    console.error('[ZERODHA] Error fetching positions:', error.message || error);
     handleKiteError(error, res);
   }
 });
 
-/**
- * GET /api/zerodha/profile
- * Fetch user profile from Zerodha
- */
 router.get('/profile', requireConnection, async (_req: Request, res: Response) => {
   try {
     const profile = await kite.getProfile();
     res.json({ profile });
   } catch (error: any) {
-    console.error('[ZERODHA] Error fetching profile:', error.message || error);
     handleKiteError(error, res);
   }
 });
 
-/**
- * Handle Kite API errors — detect token expiry
- */
-function handleKiteError(error: any, res: Response) {
+async function handleKiteError(error: any, res: Response) {
   if (error.status === 403 || error.error_type === 'TokenException') {
     sessionState.isConnected = false;
-    res.status(401).json({
-      error: 'Session expired. Please login again.',
-      connected: false,
-      expired: true,
-    });
+    // Remove stale session from DB
+    if (sessionState.userId) {
+      await pool.query('DELETE FROM kite_sessions WHERE user_id = $1', [sessionState.userId]).catch(() => {});
+    }
+    res.status(401).json({ error: 'Session expired. Please login again.', connected: false, expired: true });
   } else {
-    res.status(500).json({
-      error: error.message || 'Zerodha API error',
-      details: error.error_type || undefined,
-    });
+    res.status(500).json({ error: error.message || 'Zerodha API error', details: error.error_type || undefined });
   }
 }
 
 export { router as zerodhaRouter };
-
-
 

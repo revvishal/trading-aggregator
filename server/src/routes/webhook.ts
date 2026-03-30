@@ -1,54 +1,19 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
+import { pool } from '../db';
 
 const router: ReturnType<typeof Router> = Router();
-
-// In-memory store for webhook alerts
-interface StoredAlert {
-  id: string;
-  timestamp: string;
-  Exchange: string;
-  Close: number;
-  Ticker: string;
-  OrderType: string;
-  ProductType: string;
-  InstrumentType: string;
-  Quantity: number;
-  Strategy: string;
-  Code: string;
-  status: 'PENDING';
-  receivedAt: string;
-}
-
-const alertStore: StoredAlert[] = [];
-const MAX_ALERTS = 1000; // Keep last 1000 alerts in memory
 
 /**
  * POST /api/webhook
  * Receives TradingView alert JSON payload.
  * Supports single object or array of objects.
- *
- * Optional authentication via X-Webhook-Secret header.
- *
- * TradingView payload format:
- * [{
- *   "Exchange": "NSE",
- *   "Close": 846,
- *   "Ticker": "GANECOS",
- *   "OrderType": "ADD",
- *   "ProductType": "CNC",
- *   "InstrumentType": "EQ",
- *   "Quantity": 1,
- *   "Strategy": "PRO1",
- *   "Code": "16D2229D88875U"
- * }]
+ * Authenticated via Code field matching WEBHOOK_SECRET.
  */
-router.post('/', (req: Request, res: Response) => {
-  // Validate webhook secret if configured
+router.post('/', async (req: Request, res: Response) => {
   const webhookSecret = process.env.WEBHOOK_SECRET;
   if (webhookSecret) {
-    const providedSecret = req.body?.[0].Code as string;
-    console.log("Code:", req.body?.[0].Code);
+    const providedSecret = req.body?.[0]?.Code as string;
     if (providedSecret !== webhookSecret) {
       console.warn(`[WEBHOOK] Unauthorized request from ${req.ip}`);
       res.status(401).json({ error: 'Invalid webhook secret' });
@@ -59,22 +24,17 @@ router.post('/', (req: Request, res: Response) => {
   try {
     const body = req.body;
     const alertsArray = Array.isArray(body) ? body : [body];
-
     if (alertsArray.length === 0) {
       res.status(400).json({ error: 'Empty payload' });
       return;
     }
 
     const receivedAt = new Date().toISOString();
-    const newAlerts: StoredAlert[] = [];
+    const newAlerts: any[] = [];
 
     for (const item of alertsArray) {
-      if (!item.Ticker) {
-        console.warn('[WEBHOOK] Skipping alert without Ticker:', item);
-        continue;
-      }
-
-      const alert: StoredAlert = {
+      if (!item.Ticker) { continue; }
+      const alert = {
         id: uuidv4(),
         timestamp: receivedAt,
         Exchange: (item.Exchange || 'NSE').trim(),
@@ -90,22 +50,17 @@ router.post('/', (req: Request, res: Response) => {
         receivedAt,
       };
 
-      alertStore.push(alert);
-      newAlerts.push(alert);
+      await pool.query(
+        `INSERT INTO alerts (id, timestamp, exchange, close, ticker, order_type, product_type, instrument_type, quantity, strategy, code, status, received_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        [alert.id, alert.timestamp, alert.Exchange, alert.Close, alert.Ticker, alert.OrderType, alert.ProductType, alert.InstrumentType, alert.Quantity, alert.Strategy, alert.Code, alert.status, alert.receivedAt]
+      );
 
+      newAlerts.push(alert);
       console.log(`[WEBHOOK] ✓ Received: ${alert.OrderType} ${alert.Ticker} @ ₹${alert.Close} (${alert.Strategy})`);
     }
 
-    // Trim store if too large
-    while (alertStore.length > MAX_ALERTS) {
-      alertStore.shift();
-    }
-
-    res.status(200).json({
-      success: true,
-      received: newAlerts.length,
-      alerts: newAlerts,
-    });
+    res.status(200).json({ success: true, received: newAlerts.length, alerts: newAlerts });
   } catch (error) {
     console.error('[WEBHOOK] Error processing alert:', error);
     res.status(400).json({ error: 'Invalid payload format' });
@@ -114,60 +69,79 @@ router.post('/', (req: Request, res: Response) => {
 
 /**
  * GET /api/webhook/alerts
- * Fetch stored webhook alerts.
- * Query params:
- *   - since: ISO timestamp to get alerts after (for polling)
- *   - limit: max number of alerts (default: 100)
+ * Fetch stored webhook alerts from DB.
  */
-router.get('/alerts', (req: Request, res: Response) => {
-  const since = req.query.since as string | undefined;
-  const limit = Math.min(Number(req.query.limit) || 100, MAX_ALERTS);
+router.get('/alerts', async (req: Request, res: Response) => {
+  try {
+    const since = req.query.since as string | undefined;
+    const limit = Math.min(Number(req.query.limit) || 100, 1000);
 
-  let results = [...alertStore];
+    let query = 'SELECT * FROM alerts';
+    const params: any[] = [];
 
-  if (since) {
-    const sinceTime = new Date(since).getTime();
-    results = results.filter((a) => new Date(a.receivedAt).getTime() > sinceTime);
+    if (since) {
+      query += ' WHERE received_at > $1';
+      params.push(since);
+    }
+    query += ' ORDER BY received_at DESC LIMIT $' + (params.length + 1);
+    params.push(limit);
+
+    const result = await pool.query(query, params);
+    const alerts = result.rows.map((row: any) => ({
+      id: row.id,
+      timestamp: row.timestamp,
+      Exchange: row.exchange,
+      Close: parseFloat(row.close),
+      Ticker: row.ticker,
+      OrderType: row.order_type,
+      ProductType: row.product_type,
+      InstrumentType: row.instrument_type,
+      Quantity: row.quantity,
+      Strategy: row.strategy,
+      Code: row.code,
+      status: row.status,
+      receivedAt: row.received_at,
+    }));
+
+    const countResult = await pool.query('SELECT COUNT(*) FROM alerts');
+    res.json({ count: alerts.length, total: parseInt(countResult.rows[0].count), alerts });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
-
-  // Return most recent first, limited
-  results = results
-    .sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime())
-    .slice(0, limit);
-
-  res.json({
-    count: results.length,
-    total: alertStore.length,
-    alerts: results,
-  });
 });
 
 /**
  * GET /api/webhook/alerts/count
- * Quick count of pending alerts (for badge/polling)
  */
-router.get('/alerts/count', (req: Request, res: Response) => {
-  const since = req.query.since as string | undefined;
-
-  let count = alertStore.length;
-  if (since) {
-    const sinceTime = new Date(since).getTime();
-    count = alertStore.filter((a) => new Date(a.receivedAt).getTime() > sinceTime).length;
+router.get('/alerts/count', async (req: Request, res: Response) => {
+  try {
+    const since = req.query.since as string | undefined;
+    let count: number;
+    if (since) {
+      const r = await pool.query('SELECT COUNT(*) FROM alerts WHERE received_at > $1', [since]);
+      count = parseInt(r.rows[0].count);
+    } else {
+      const r = await pool.query('SELECT COUNT(*) FROM alerts');
+      count = parseInt(r.rows[0].count);
+    }
+    const totalR = await pool.query('SELECT COUNT(*) FROM alerts');
+    res.json({ count, total: parseInt(totalR.rows[0].count) });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
-
-  res.json({ count, total: alertStore.length });
 });
 
 /**
  * DELETE /api/webhook/alerts
- * Clear all stored alerts
  */
-router.delete('/alerts', (_req: Request, res: Response) => {
-  const cleared = alertStore.length;
-  alertStore.length = 0;
-  res.json({ success: true, cleared });
+router.delete('/alerts', async (_req: Request, res: Response) => {
+  try {
+    const result = await pool.query('DELETE FROM alerts');
+    res.json({ success: true, cleared: result.rowCount });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 export { router as webhookRouter };
-
 

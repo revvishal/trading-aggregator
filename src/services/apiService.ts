@@ -1,58 +1,190 @@
 /**
  * API Service — Frontend communication with the backend server.
- *
- * In development, CRA proxies /api/* requests to the backend (port 3001).
- * In production, set REACT_APP_API_URL to the backend URL.
+ * All authenticated requests include JWT Bearer token.
  */
 
 const API_BASE = process.env.REACT_APP_API_URL || '';
 
 // ==========================================
+// Auth Token Management
+// ==========================================
+
+function getToken(): string | null {
+  return sessionStorage.getItem('auth_token');
+}
+
+function setToken(token: string): void {
+  sessionStorage.setItem('auth_token', token);
+}
+
+function clearToken(): void {
+  sessionStorage.removeItem('auth_token');
+  sessionStorage.removeItem('auth_username');
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+}
+
+async function handleResponse(res: Response): Promise<any> {
+  if (res.status === 401) {
+    clearToken();
+    window.location.reload(); // Force re-login
+    throw new Error('Session expired');
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
+  return res.json();
+}
+
+// ==========================================
+// Authentication
+// ==========================================
+
+export async function login(username: string, password: string): Promise<{ token: string; username: string }> {
+  const res = await fetch(`${API_BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Login failed');
+  }
+  const data = await res.json();
+  setToken(data.token);
+  sessionStorage.setItem('auth_username', data.username);
+  return data;
+}
+
+export async function verifyToken(): Promise<boolean> {
+  const token = getToken();
+  if (!token) return false;
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/verify`, { headers: authHeaders() });
+    if (res.ok) return true;
+    clearToken();
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+export function logout(): void {
+  clearToken();
+}
+
+export function isLoggedIn(): boolean {
+  return !!getToken();
+}
+
+export function getUsername(): string {
+  return sessionStorage.getItem('auth_username') || '';
+}
+
+// ==========================================
 // Health
 // ==========================================
 
-export async function checkServerHealth(): Promise<{
-  status: string;
-  timestamp: string;
-  uptime: number;
-}> {
-  console.log("API_BASE variable is", API_BASE);
+export async function checkServerHealth(): Promise<{ status: string; timestamp: string; uptime: number }> {
   const res = await fetch(`${API_BASE}/api/health`);
   if (!res.ok) throw new Error('Server unavailable');
   return res.json();
 }
 
 // ==========================================
+// Data CRUD — replaces localStorage
+// ==========================================
+
+export async function fetchAlerts(): Promise<any[]> {
+  const res = await fetch(`${API_BASE}/api/data/alerts`, { headers: authHeaders() });
+  return handleResponse(res);
+}
+
+export async function saveAlerts(alerts: any[]): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/data/alerts`, {
+    method: 'PUT', headers: authHeaders(), body: JSON.stringify(alerts),
+  });
+  await handleResponse(res);
+}
+
+export async function fetchOrders(): Promise<any[]> {
+  const res = await fetch(`${API_BASE}/api/data/orders`, { headers: authHeaders() });
+  return handleResponse(res);
+}
+
+export async function saveOrders(orders: any[]): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/data/orders`, {
+    method: 'PUT', headers: authHeaders(), body: JSON.stringify(orders),
+  });
+  await handleResponse(res);
+}
+
+export async function fetchHoldings(): Promise<any[]> {
+  const res = await fetch(`${API_BASE}/api/data/holdings`, { headers: authHeaders() });
+  return handleResponse(res);
+}
+
+export async function saveHoldings(holdings: any[]): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/data/holdings`, {
+    method: 'PUT', headers: authHeaders(), body: JSON.stringify(holdings),
+  });
+  await handleResponse(res);
+}
+
+export async function fetchMatchedTrades(): Promise<any[]> {
+  const res = await fetch(`${API_BASE}/api/data/matched-trades`, { headers: authHeaders() });
+  return handleResponse(res);
+}
+
+export async function saveMatchedTrades(trades: any[]): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/data/matched-trades`, {
+    method: 'PUT', headers: authHeaders(), body: JSON.stringify(trades),
+  });
+  await handleResponse(res);
+}
+
+export async function fetchPnlEntries(): Promise<any[]> {
+  const res = await fetch(`${API_BASE}/api/data/pnl-entries`, { headers: authHeaders() });
+  return handleResponse(res);
+}
+
+export async function savePnlEntries(entries: any[]): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/data/pnl-entries`, {
+    method: 'PUT', headers: authHeaders(), body: JSON.stringify(entries),
+  });
+  await handleResponse(res);
+}
+
+export async function clearAllData(): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/data/all`, { method: 'DELETE', headers: authHeaders() });
+  await handleResponse(res);
+}
+
+// ==========================================
 // Webhook Alerts
 // ==========================================
 
-export async function fetchWebhookAlerts(since?: string): Promise<{
-  count: number;
-  total: number;
-  alerts: any[];
-}> {
+export async function fetchWebhookAlerts(since?: string): Promise<{ count: number; total: number; alerts: any[] }> {
   const params = new URLSearchParams();
   if (since) params.set('since', since);
-  const res = await fetch(`${API_BASE}/api/webhook/alerts?${params}`);
-  if (!res.ok) throw new Error('Failed to fetch webhook alerts');
-  return res.json();
+  const res = await fetch(`${API_BASE}/api/webhook/alerts?${params}`, { headers: authHeaders() });
+  return handleResponse(res);
 }
 
-export async function fetchWebhookAlertCount(since?: string): Promise<{
-  count: number;
-  total: number;
-}> {
+export async function fetchWebhookAlertCount(since?: string): Promise<{ count: number; total: number }> {
   const params = new URLSearchParams();
   if (since) params.set('since', since);
-  const res = await fetch(`${API_BASE}/api/webhook/alerts/count?${params}`);
-  if (!res.ok) throw new Error('Failed to fetch alert count');
-  return res.json();
+  const res = await fetch(`${API_BASE}/api/webhook/alerts/count?${params}`, { headers: authHeaders() });
+  return handleResponse(res);
 }
 
 export async function clearWebhookAlerts(): Promise<{ success: boolean; cleared: number }> {
-  const res = await fetch(`${API_BASE}/api/webhook/alerts`, { method: 'DELETE' });
-  if (!res.ok) throw new Error('Failed to clear alerts');
-  return res.json();
+  const res = await fetch(`${API_BASE}/api/webhook/alerts`, { method: 'DELETE', headers: authHeaders() });
+  return handleResponse(res);
 }
 
 // ==========================================
@@ -67,9 +199,8 @@ export interface ZerodhaStatus {
 }
 
 export async function getZerodhaStatus(): Promise<ZerodhaStatus> {
-  const res = await fetch(`${API_BASE}/api/zerodha/status`);
-  if (!res.ok) throw new Error('Failed to get Zerodha status');
-  return res.json();
+  const res = await fetch(`${API_BASE}/api/zerodha/status`, { headers: authHeaders() });
+  return handleResponse(res);
 }
 
 export function getZerodhaLoginUrl(): string {
@@ -77,56 +208,26 @@ export function getZerodhaLoginUrl(): string {
 }
 
 export async function disconnectZerodha(): Promise<{ success: boolean }> {
-  const res = await fetch(`${API_BASE}/api/zerodha/disconnect`, { method: 'POST' });
-  if (!res.ok) throw new Error('Failed to disconnect');
-  return res.json();
+  const res = await fetch(`${API_BASE}/api/zerodha/disconnect`, { method: 'POST', headers: authHeaders() });
+  return handleResponse(res);
 }
 
-export async function fetchZerodhaOrders(): Promise<{
-  orders: any[];
-  count: number;
-}> {
-  const res = await fetch(`${API_BASE}/api/zerodha/orders`);
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    if (data.expired) throw new Error('SESSION_EXPIRED');
-    throw new Error(data.error || 'Failed to fetch orders');
-  }
-  return res.json();
+export async function fetchZerodhaOrders(): Promise<{ orders: any[]; count: number }> {
+  const res = await fetch(`${API_BASE}/api/zerodha/orders`, { headers: authHeaders() });
+  return handleResponse(res);
 }
 
-export async function fetchZerodhaHoldings(): Promise<{
-  holdings: any[];
-  count: number;
-}> {
-  const res = await fetch(`${API_BASE}/api/zerodha/holdings`);
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    if (data.expired) throw new Error('SESSION_EXPIRED');
-    throw new Error(data.error || 'Failed to fetch holdings');
-  }
-  return res.json();
+export async function fetchZerodhaHoldings(): Promise<{ holdings: any[]; count: number }> {
+  const res = await fetch(`${API_BASE}/api/zerodha/holdings`, { headers: authHeaders() });
+  return handleResponse(res);
 }
 
-export async function fetchZerodhaPositions(): Promise<{
-  positions: { net: any[]; day: any[] };
-}> {
-  const res = await fetch(`${API_BASE}/api/zerodha/positions`);
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    if (data.expired) throw new Error('SESSION_EXPIRED');
-    throw new Error(data.error || 'Failed to fetch positions');
-  }
-  return res.json();
+export async function fetchZerodhaPositions(): Promise<{ positions: { net: any[]; day: any[] } }> {
+  const res = await fetch(`${API_BASE}/api/zerodha/positions`, { headers: authHeaders() });
+  return handleResponse(res);
 }
 
 export async function fetchZerodhaProfile(): Promise<{ profile: any }> {
-  const res = await fetch(`${API_BASE}/api/zerodha/profile`);
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    if (data.expired) throw new Error('SESSION_EXPIRED');
-    throw new Error(data.error || 'Failed to fetch profile');
-  }
-  return res.json();
+  const res = await fetch(`${API_BASE}/api/zerodha/profile`, { headers: authHeaders() });
+  return handleResponse(res);
 }
-
