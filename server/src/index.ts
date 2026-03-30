@@ -31,7 +31,7 @@ app.use('/api/auth', authRouter);
 // Webhook POST is authenticated via WEBHOOK_SECRET (not JWT)
 // Webhook GET/DELETE need JWT
 app.post('/api/webhook', webhookRouter);
-app.use('/api/webhook', authMiddleware, webhookRouter);
+app.use('/api/webhook', webhookRouter);
 
 // Zerodha login/callback are public (OAuth redirects), rest need JWT
 app.get('/api/zerodha/login', (req, res, next) => { zerodhaRouter(req, res, next); });
