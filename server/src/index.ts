@@ -36,7 +36,7 @@ app.use('/api/webhook', webhookRouter);
 // Zerodha login/callback are public (OAuth redirects), rest need JWT
 app.get('/api/zerodha/login', (req, res, next) => { zerodhaRouter(req, res, next); });
 app.get('/api/zerodha/callback', (req, res, next) => { zerodhaRouter(req, res, next); });
-app.use('/api/zerodha', authMiddleware, zerodhaRouter);
+app.use('/api/zerodha', zerodhaRouter);
 
 // Data CRUD routes (all need JWT)
 app.use('/api/data', authMiddleware, dataRouter);
