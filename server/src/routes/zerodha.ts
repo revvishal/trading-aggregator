@@ -176,7 +176,7 @@ router.get('/callback', async (req: Request, res: Response) => {
   const requestToken = req.query.request_token as string;
   const status = req.query.status as string;
   const accountType = (req.query.state as string || 'primary').toLowerCase() === 'secondary' ? 'secondary' : 'primary';
-
+  console.log(`[ZERODHA: callback recieved ${accountType} , ${requestToken} , ${status}] `);
   if (status !== 'success' || !requestToken) {
     res.redirect(`${FRONTEND_URL}?zerodha_status=error&account=${accountType}&message=Login+failed+or+cancelled`);
     return;
