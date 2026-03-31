@@ -1,29 +1,50 @@
 import { TradingViewAlert, ZerodhaOrder, MatchedTrade, PnLEntry, ZerodhaHolding } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
+/**
+ * Match alerts with orders.
+ * - An order can only be matched once (check existingMatches).
+ * - An alert CAN match with orders from both portfolios.
+ * - Order/trade date must be on or after the alert signal date.
+ */
 export function matchTradesWithAlerts(
   alerts: TradingViewAlert[],
   orders: ZerodhaOrder[],
-  holdings: ZerodhaHolding[]
-): { matchedTrades: MatchedTrade[]; updatedAlerts: TradingViewAlert[] } {
-  const matchedTrades: MatchedTrade[] = [];
+  holdings: ZerodhaHolding[],
+  existingMatches: MatchedTrade[] = []
+): { newMatches: MatchedTrade[]; updatedAlerts: TradingViewAlert[] } {
+  const newMatches: MatchedTrade[] = [];
   const updatedAlerts = [...alerts];
 
-  // Sort by timestamp
+  // Collect all already-matched order IDs (globally, across both portfolios)
+  const alreadyMatchedOrderIds = new Set(existingMatches.map((m) => m.zerodhaOrderId));
+
+  // Sort alerts by timestamp (oldest first)
   const sortedAlerts = [...alerts].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-  const usedOrderIds = new Set<string>();
+
+  // Track orders matched in this run
+  const newlyMatchedOrderIds = new Set<string>();
 
   for (const alert of sortedAlerts) {
     const alertIdx = updatedAlerts.findIndex((a) => a.id === alert.id);
     if (alertIdx === -1) continue;
 
+    const alertTime = new Date(alert.timestamp).getTime();
+
     // Find matching orders by ticker
     const matchingOrders = orders.filter((o) => {
-      if (usedOrderIds.has(o.id)) return false;
+      // Skip already matched orders (from previous runs or this run)
+      if (alreadyMatchedOrderIds.has(o.id)) return false;
+      if (newlyMatchedOrderIds.has(o.id)) return false;
+
       if (o.status !== 'COMPLETE') return false;
 
       const tickerMatch = o.ticker.toUpperCase() === alert.Ticker.toUpperCase();
       if (!tickerMatch) return false;
+
+      // Order date must be on or after the signal date
+      const orderTime = new Date(o.timestamp).getTime();
+      if (orderTime < alertTime) return false;
 
       // BUY/ADD signals match with BUY orders, SELL/REMOVE match with SELL orders
       const alertDirection = alert.OrderType === 'BUY' || alert.OrderType === 'ADD' ? 'BUY' : 'SELL';
@@ -31,9 +52,9 @@ export function matchTradesWithAlerts(
     });
 
     if (matchingOrders.length > 0) {
+      // Pick the closest order by time (after the alert)
       const bestOrder = matchingOrders.sort(
-        (a, b) => Math.abs(new Date(a.timestamp).getTime() - new Date(alert.timestamp).getTime()) -
-                   Math.abs(new Date(b.timestamp).getTime() - new Date(alert.timestamp).getTime())
+        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
       )[0];
 
       let matchType: MatchedTrade['matchType'];
@@ -42,7 +63,7 @@ export function matchTradesWithAlerts(
       else if (alert.OrderType === 'ADD') matchType = 'PARTIAL_ENTRY';
       else matchType = 'PARTIAL_EXIT';
 
-      matchedTrades.push({
+      newMatches.push({
         id: uuidv4(),
         alertId: alert.id,
         zerodhaOrderId: bestOrder.id,
@@ -55,14 +76,15 @@ export function matchTradesWithAlerts(
         alertClose: alert.Close,
         timestamp: bestOrder.timestamp,
         status: 'MATCHED',
+        accountType: bestOrder.accountType || 'primary',
       });
 
-      usedOrderIds.add(bestOrder.id);
+      newlyMatchedOrderIds.add(bestOrder.id);
       updatedAlerts[alertIdx] = { ...updatedAlerts[alertIdx], status: 'ACTIONED' };
     }
   }
 
-  return { matchedTrades, updatedAlerts };
+  return { newMatches, updatedAlerts };
 }
 
 export function calculatePnL(
@@ -73,7 +95,6 @@ export function calculatePnL(
   const pnlMap = new Map<string, PnLEntry>();
   const matchedAlertIds = new Set(matchedTrades.map((m) => m.alertId));
 
-  // Process all alerts
   for (const alert of alerts) {
     const key = `${alert.Ticker}_${alert.Strategy}`;
     const isActioned = matchedAlertIds.has(alert.id);
@@ -97,18 +118,17 @@ export function calculatePnL(
 
     const entry = pnlMap.get(key)!;
 
-    // Find matched trade for this alert
-    const matchedTrade = matchedTrades.find((m) => m.alertId === alert.id);
-    if (matchedTrade) {
+    const matchedTradesForAlert = matchedTrades.filter((m) => m.alertId === alert.id);
+    if (matchedTradesForAlert.length > 0) {
       entry.actioned = true;
-      entry.trades++;
-
-      if (matchedTrade.matchType === 'FULL_EXIT' || matchedTrade.matchType === 'PARTIAL_EXIT') {
-        // Calculate realised P&L for exits
-        const buyPrice = entry.averageBuyPrice || matchedTrade.alertClose;
-        entry.realisedPnl += (matchedTrade.zerodhaPrice - buyPrice) * matchedTrade.zerodhaQuantity;
-      } else {
-        entry.totalInvested += matchedTrade.zerodhaPrice * matchedTrade.zerodhaQuantity;
+      for (const matchedTrade of matchedTradesForAlert) {
+        entry.trades++;
+        if (matchedTrade.matchType === 'FULL_EXIT' || matchedTrade.matchType === 'PARTIAL_EXIT') {
+          const buyPrice = entry.averageBuyPrice || matchedTrade.alertClose;
+          entry.realisedPnl += (matchedTrade.zerodhaPrice - buyPrice) * matchedTrade.zerodhaQuantity;
+        } else {
+          entry.totalInvested += matchedTrade.zerodhaPrice * matchedTrade.zerodhaQuantity;
+        }
       }
     } else {
       entry.trades++;
@@ -117,7 +137,6 @@ export function calculatePnL(
     pnlMap.set(key, entry);
   }
 
-  // Add holdings data for unrealised P&L
   for (const holding of holdings) {
     const existingKeys = Array.from(pnlMap.keys()).filter((k) => k.startsWith(holding.ticker.toUpperCase()));
     if (existingKeys.length > 0) {
@@ -134,4 +153,3 @@ export function calculatePnL(
 
   return Array.from(pnlMap.values());
 }
-

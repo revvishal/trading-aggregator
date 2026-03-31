@@ -59,6 +59,7 @@ export interface ZerodhaOrder {
   status: 'COMPLETE' | 'OPEN' | 'CANCELLED' | 'REJECTED';
   productType: string;
   instrumentType: string;
+  accountType?: string;
 }
 
 export interface ZerodhaHolding {
@@ -70,6 +71,7 @@ export interface ZerodhaHolding {
   pnl: number;
   dayChange: number;
   dayChangePercent: number;
+  accountType?: string;
 }
 
 export interface MatchedTrade {
@@ -86,6 +88,7 @@ export interface MatchedTrade {
   timestamp: string;
   pnl?: number;
   status: 'MATCHED' | 'PARTIAL' | 'UNMATCHED';
+  accountType?: string;
 }
 
 export interface PnLEntry {

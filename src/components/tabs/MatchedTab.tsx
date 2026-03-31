@@ -21,6 +21,7 @@ import LinkIcon from '@mui/icons-material/Link';
 import LinkOffIcon from '@mui/icons-material/LinkOff';
 import { useAppContext } from '../../context/AppContext';
 import { matchTradesWithAlerts } from '../../services/tradeMatchingService';
+import { appendMatchedTrades } from '../../services/apiService';
 
 const matchTypeLabels: Record<string, string> = {
   FULL_ENTRY: 'Full Entry (BUY)',
@@ -39,16 +40,31 @@ const matchTypeColor: Record<string, 'success' | 'error' | 'info' | 'warning'> =
 export default function MatchedTab() {
   const { state, dispatch } = useAppContext();
   const [lastRun, setLastRun] = useState<string | null>(null);
+  const [matching, setMatching] = useState(false);
 
-  const runMatching = () => {
-    const { matchedTrades, updatedAlerts } = matchTradesWithAlerts(
-      state.alerts,
-      state.zerodhaOrders,
-      state.zerodhaHoldings
-    );
-    dispatch({ type: 'SET_MATCHED_TRADES', payload: matchedTrades });
-    dispatch({ type: 'SET_ALERTS', payload: updatedAlerts });
-    setLastRun(new Date().toLocaleString('en-IN'));
+  const runMatching = async () => {
+    setMatching(true);
+    try {
+      const { newMatches, updatedAlerts } = matchTradesWithAlerts(
+        state.alerts,
+        state.zerodhaOrders,
+        state.zerodhaHoldings,
+        state.matchedTrades // pass existing matches so orders aren't re-matched
+      );
+
+      if (newMatches.length > 0) {
+        // Persist new matches via POST (append-only)
+        await appendMatchedTrades(newMatches);
+        // Update local state: merge new matches with existing
+        dispatch({ type: 'SET_MATCHED_TRADES', payload: [...state.matchedTrades, ...newMatches] });
+      }
+      dispatch({ type: 'SET_ALERTS', payload: updatedAlerts });
+      setLastRun(new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
+    } catch (err) {
+      console.error('Matching failed:', err);
+    } finally {
+      setMatching(false);
+    }
   };
 
   const filteredMatches = state.globalTickerFilter
@@ -131,9 +147,9 @@ export default function MatchedTab() {
           variant="contained"
           startIcon={<SyncIcon />}
           onClick={runMatching}
-          disabled={state.alerts.length === 0 && state.zerodhaOrders.length === 0}
+          disabled={matching || (state.alerts.length === 0 && state.zerodhaOrders.length === 0)}
         >
-          Run Matching
+          {matching ? 'Matching...' : 'Run Matching'}
         </Button>
       </Box>
 
@@ -166,6 +182,7 @@ export default function MatchedTab() {
                 <TableCell sx={{ fontWeight: 600 }}>Zerodha Price</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Price Diff</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Time</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Portfolio</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
               </TableRow>
             </TableHead>
@@ -207,11 +224,20 @@ export default function MatchedTab() {
                     </TableCell>
                     <TableCell sx={{ fontSize: '0.8rem' }}>
                       {new Date(trade.timestamp).toLocaleString('en-IN', {
+                        timeZone: 'Asia/Kolkata',
                         day: '2-digit',
                         month: 'short',
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={trade.accountType === 'secondary' ? 'Secondary' : 'Primary'}
+                        size="small"
+                        variant="outlined"
+                        color={trade.accountType === 'secondary' ? 'info' : 'default'}
+                      />
                     </TableCell>
                     <TableCell>
                       <Chip label={trade.status} color="success" size="small" variant="outlined" />
@@ -252,6 +278,7 @@ export default function MatchedTab() {
                 <TableRow key={alert.id} hover>
                   <TableCell sx={{ fontSize: '0.8rem' }}>
                     {new Date(alert.timestamp).toLocaleString('en-IN', {
+                      timeZone: 'Asia/Kolkata',
                       day: '2-digit',
                       month: 'short',
                       hour: '2-digit',
@@ -308,6 +335,7 @@ export default function MatchedTab() {
                   <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{order.orderId}</TableCell>
                   <TableCell sx={{ fontSize: '0.8rem' }}>
                     {new Date(order.timestamp).toLocaleString('en-IN', {
+                      timeZone: 'Asia/Kolkata',
                       day: '2-digit',
                       month: 'short',
                       hour: '2-digit',

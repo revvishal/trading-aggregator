@@ -111,25 +111,29 @@ export async function saveAlerts(alerts: any[]): Promise<void> {
   await handleResponse(res);
 }
 
-export async function fetchOrders(): Promise<any[]> {
-  const res = await fetch(`${API_BASE}/api/data/orders`, { headers: authHeaders() });
+export async function fetchOrders(account?: string): Promise<any[]> {
+  const params = account ? `?account=${account}` : '';
+  const res = await fetch(`${API_BASE}/api/data/orders${params}`, { headers: authHeaders() });
   return handleResponse(res);
 }
 
-export async function saveOrders(orders: any[]): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/data/orders`, {
+export async function saveOrders(orders: any[], account?: string): Promise<void> {
+  const params = account ? `?account=${account}` : '';
+  const res = await fetch(`${API_BASE}/api/data/orders${params}`, {
     method: 'PUT', headers: authHeaders(), body: JSON.stringify(orders),
   });
   await handleResponse(res);
 }
 
-export async function fetchHoldings(): Promise<any[]> {
-  const res = await fetch(`${API_BASE}/api/data/holdings`, { headers: authHeaders() });
+export async function fetchHoldings(account?: string): Promise<any[]> {
+  const params = account ? `?account=${account}` : '';
+  const res = await fetch(`${API_BASE}/api/data/holdings${params}`, { headers: authHeaders() });
   return handleResponse(res);
 }
 
-export async function saveHoldings(holdings: any[]): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/data/holdings`, {
+export async function saveHoldings(holdings: any[], account?: string): Promise<void> {
+  const params = account ? `?account=${account}` : '';
+  const res = await fetch(`${API_BASE}/api/data/holdings${params}`, {
     method: 'PUT', headers: authHeaders(), body: JSON.stringify(holdings),
   });
   await handleResponse(res);
@@ -147,6 +151,13 @@ export async function saveMatchedTrades(trades: any[]): Promise<void> {
   await handleResponse(res);
 }
 
+export async function appendMatchedTrades(trades: any[]): Promise<{ inserted: number }> {
+  const res = await fetch(`${API_BASE}/api/data/matched-trades`, {
+    method: 'POST', headers: authHeaders(), body: JSON.stringify(trades),
+  });
+  return handleResponse(res);
+}
+
 export async function fetchPnlEntries(): Promise<any[]> {
   const res = await fetch(`${API_BASE}/api/data/pnl-entries`, { headers: authHeaders() });
   return handleResponse(res);
@@ -162,6 +173,12 @@ export async function savePnlEntries(entries: any[]): Promise<void> {
 export async function clearAllData(): Promise<void> {
   const res = await fetch(`${API_BASE}/api/data/all`, { method: 'DELETE', headers: authHeaders() });
   await handleResponse(res);
+}
+
+// Sync metadata
+export async function fetchSyncMeta(account: string = 'primary'): Promise<{ lastOrderSyncDate: string | null; updatedAt: string | null }> {
+  const res = await fetch(`${API_BASE}/api/zerodha/sync-meta?account=${account}`, { headers: authHeaders() });
+  return handleResponse(res);
 }
 
 // ==========================================
@@ -223,8 +240,10 @@ export async function disconnectZerodha(account: string = 'primary'): Promise<{ 
   return handleResponse(res);
 }
 
-export async function fetchZerodhaOrders(account: string = 'primary'): Promise<{ orders: any[]; count: number }> {
-  const res = await fetch(`${API_BASE}/api/zerodha/orders?account=${account}`, { headers: authHeaders() });
+export async function fetchZerodhaOrders(account: string = 'primary', fromDate?: string): Promise<{ orders: any[]; count: number; newCount?: number }> {
+  const params = new URLSearchParams({ account });
+  if (fromDate) params.set('from', fromDate);
+  const res = await fetch(`${API_BASE}/api/zerodha/orders?${params}`, { headers: authHeaders() });
   return handleResponse(res);
 }
 

@@ -9,9 +9,7 @@ const router: ReturnType<typeof Router> = Router();
 
 router.get('/alerts', async (_req: Request, res: Response) => {
   try {
-    const result = await pool.query(
-      'SELECT * FROM alerts ORDER BY created_at DESC'
-    );
+    const result = await pool.query("SELECT * FROM alerts ORDER BY timestamp DESC");
     const alerts = result.rows.map(rowToAlert);
     res.json(alerts);
   } catch (err: any) {
@@ -21,10 +19,7 @@ router.get('/alerts', async (_req: Request, res: Response) => {
 
 router.put('/alerts', async (req: Request, res: Response) => {
   const alerts = req.body;
-  if (!Array.isArray(alerts)) {
-    res.status(400).json({ error: 'Expected an array' });
-    return;
-  }
+  if (!Array.isArray(alerts)) { res.status(400).json({ error: 'Expected an array' }); return; }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -47,12 +42,18 @@ router.put('/alerts', async (req: Request, res: Response) => {
 });
 
 // ==========================================
-// ZERODHA ORDERS
+// ZERODHA ORDERS — per account
 // ==========================================
 
-router.get('/orders', async (_req: Request, res: Response) => {
+router.get('/orders', async (req: Request, res: Response) => {
+  const account = (req.query.account as string) || null;
   try {
-    const result = await pool.query('SELECT * FROM zerodha_orders ORDER BY created_at DESC');
+    let result;
+    if (account) {
+      result = await pool.query('SELECT * FROM zerodha_orders WHERE account_type = $1 ORDER BY timestamp DESC', [account]);
+    } else {
+      result = await pool.query('SELECT * FROM zerodha_orders ORDER BY timestamp DESC');
+    }
     const orders = result.rows.map(rowToOrder);
     res.json(orders);
   } catch (err: any) {
@@ -62,16 +63,17 @@ router.get('/orders', async (_req: Request, res: Response) => {
 
 router.put('/orders', async (req: Request, res: Response) => {
   const orders = req.body;
+  const account = (req.query.account as string) || 'primary';
   if (!Array.isArray(orders)) { res.status(400).json({ error: 'Expected an array' }); return; }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query('DELETE FROM zerodha_orders');
+    await client.query('DELETE FROM zerodha_orders WHERE account_type = $1', [account]);
     for (const o of orders) {
       await client.query(
-        `INSERT INTO zerodha_orders (id, order_id, ticker, exchange, type, quantity, price, timestamp, status, product_type, instrument_type)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-        [o.id, o.orderId, o.ticker, o.exchange, o.type, o.quantity, o.price, o.timestamp, o.status, o.productType, o.instrumentType]
+        `INSERT INTO zerodha_orders (id, order_id, ticker, exchange, type, quantity, price, timestamp, status, product_type, instrument_type, account_type)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        [o.id, o.orderId, o.ticker, o.exchange, o.type, o.quantity, o.price, o.timestamp, o.status, o.productType, o.instrumentType, account]
       );
     }
     await client.query('COMMIT');
@@ -85,12 +87,18 @@ router.put('/orders', async (req: Request, res: Response) => {
 });
 
 // ==========================================
-// ZERODHA HOLDINGS
+// ZERODHA HOLDINGS — per account
 // ==========================================
 
-router.get('/holdings', async (_req: Request, res: Response) => {
+router.get('/holdings', async (req: Request, res: Response) => {
+  const account = (req.query.account as string) || null;
   try {
-    const result = await pool.query('SELECT * FROM zerodha_holdings ORDER BY created_at DESC');
+    let result;
+    if (account) {
+      result = await pool.query('SELECT * FROM zerodha_holdings WHERE account_type = $1 ORDER BY created_at DESC', [account]);
+    } else {
+      result = await pool.query('SELECT * FROM zerodha_holdings ORDER BY created_at DESC');
+    }
     const holdings = result.rows.map(rowToHolding);
     res.json(holdings);
   } catch (err: any) {
@@ -100,16 +108,17 @@ router.get('/holdings', async (_req: Request, res: Response) => {
 
 router.put('/holdings', async (req: Request, res: Response) => {
   const holdings = req.body;
+  const account = (req.query.account as string) || 'primary';
   if (!Array.isArray(holdings)) { res.status(400).json({ error: 'Expected an array' }); return; }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query('DELETE FROM zerodha_holdings');
+    await client.query('DELETE FROM zerodha_holdings WHERE account_type = $1', [account]);
     for (const h of holdings) {
       await client.query(
-        `INSERT INTO zerodha_holdings (ticker, exchange, quantity, average_price, last_price, pnl, day_change, day_change_percent)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [h.ticker, h.exchange, h.quantity, h.averagePrice, h.lastPrice, h.pnl, h.dayChange, h.dayChangePercent]
+        `INSERT INTO zerodha_holdings (ticker, exchange, quantity, average_price, last_price, pnl, day_change, day_change_percent, account_type)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [h.ticker, h.exchange, h.quantity, h.averagePrice, h.lastPrice, h.pnl, h.dayChange, h.dayChangePercent, account]
       );
     }
     await client.query('COMMIT');
@@ -123,12 +132,12 @@ router.put('/holdings', async (req: Request, res: Response) => {
 });
 
 // ==========================================
-// MATCHED TRADES
+// MATCHED TRADES — append-only, never delete matched
 // ==========================================
 
 router.get('/matched-trades', async (_req: Request, res: Response) => {
   try {
-    const result = await pool.query('SELECT * FROM matched_trades ORDER BY created_at DESC');
+    const result = await pool.query('SELECT * FROM matched_trades ORDER BY timestamp DESC');
     const trades = result.rows.map(rowToMatchedTrade);
     res.json(trades);
   } catch (err: any) {
@@ -136,6 +145,28 @@ router.get('/matched-trades', async (_req: Request, res: Response) => {
   }
 });
 
+// Append new matched trades (upsert — skip existing)
+router.post('/matched-trades', async (req: Request, res: Response) => {
+  const trades = req.body;
+  if (!Array.isArray(trades)) { res.status(400).json({ error: 'Expected an array' }); return; }
+  let inserted = 0;
+  for (const t of trades) {
+    try {
+      await pool.query(
+        `INSERT INTO matched_trades (id, alert_id, zerodha_order_id, ticker, match_type, direction, alert_quantity, zerodha_quantity, zerodha_price, alert_close, timestamp, pnl, status, account_type)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+         ON CONFLICT (id) DO NOTHING`,
+        [t.id, t.alertId, t.zerodhaOrderId, t.ticker, t.matchType, t.direction, t.alertQuantity, t.zerodhaQuantity, t.zerodhaPrice, t.alertClose, t.timestamp, t.pnl || null, t.status, t.accountType || 'primary']
+      );
+      inserted++;
+    } catch {
+      // skip duplicates
+    }
+  }
+  res.json({ success: true, inserted });
+});
+
+// Legacy PUT — only used for full replacement (backwards compat)
 router.put('/matched-trades', async (req: Request, res: Response) => {
   const trades = req.body;
   if (!Array.isArray(trades)) { res.status(400).json({ error: 'Expected an array' }); return; }
@@ -145,9 +176,9 @@ router.put('/matched-trades', async (req: Request, res: Response) => {
     await client.query('DELETE FROM matched_trades');
     for (const t of trades) {
       await client.query(
-        `INSERT INTO matched_trades (id, alert_id, zerodha_order_id, ticker, match_type, direction, alert_quantity, zerodha_quantity, zerodha_price, alert_close, timestamp, pnl, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-        [t.id, t.alertId, t.zerodhaOrderId, t.ticker, t.matchType, t.direction, t.alertQuantity, t.zerodhaQuantity, t.zerodhaPrice, t.alertClose, t.timestamp, t.pnl || null, t.status]
+        `INSERT INTO matched_trades (id, alert_id, zerodha_order_id, ticker, match_type, direction, alert_quantity, zerodha_quantity, zerodha_price, alert_close, timestamp, pnl, status, account_type)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+        [t.id, t.alertId, t.zerodhaOrderId, t.ticker, t.matchType, t.direction, t.alertQuantity, t.zerodhaQuantity, t.zerodhaPrice, t.alertClose, t.timestamp, t.pnl || null, t.status, t.accountType || 'primary']
       );
     }
     await client.query('COMMIT');
@@ -216,13 +247,13 @@ router.delete('/all', async (_req: Request, res: Response) => {
 });
 
 // ==========================================
-// Row mappers — DB row → frontend JSON shape
+// Row mappers
 // ==========================================
 
 function rowToAlert(row: any) {
   return {
     id: row.id,
-    timestamp: row.timestamp,
+    timestamp: row.timestamp instanceof Date ? row.timestamp.toISOString() : row.timestamp,
     Exchange: row.exchange,
     Close: parseFloat(row.close),
     Ticker: row.ticker,
@@ -247,10 +278,11 @@ function rowToOrder(row: any) {
     type: row.type,
     quantity: row.quantity,
     price: parseFloat(row.price),
-    timestamp: row.timestamp,
+    timestamp: row.timestamp instanceof Date ? row.timestamp.toISOString() : row.timestamp,
     status: row.status,
     productType: row.product_type,
     instrumentType: row.instrument_type,
+    accountType: row.account_type,
   };
 }
 
@@ -264,6 +296,7 @@ function rowToHolding(row: any) {
     pnl: parseFloat(row.pnl),
     dayChange: parseFloat(row.day_change),
     dayChangePercent: parseFloat(row.day_change_percent),
+    accountType: row.account_type,
   };
 }
 
@@ -279,9 +312,10 @@ function rowToMatchedTrade(row: any) {
     zerodhaQuantity: row.zerodha_quantity,
     zerodhaPrice: parseFloat(row.zerodha_price),
     alertClose: parseFloat(row.alert_close),
-    timestamp: row.timestamp,
+    timestamp: row.timestamp instanceof Date ? row.timestamp.toISOString() : row.timestamp,
     pnl: row.pnl ? parseFloat(row.pnl) : undefined,
     status: row.status,
+    accountType: row.account_type,
   };
 }
 

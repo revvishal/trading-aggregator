@@ -20,6 +20,7 @@ import {
   CircularProgress,
   ToggleButtonGroup,
   ToggleButton,
+  TextField,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -38,6 +39,7 @@ import {
   disconnectZerodha,
   fetchZerodhaOrders,
   fetchZerodhaHoldings,
+  fetchSyncMeta,
   ZerodhaStatus,
   ZerodhaStatusAll,
 } from '../../services/apiService';
@@ -134,6 +136,8 @@ export default function ZerodhaTab() {
   const [syncingHoldings, setSyncingHoldings] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncSuccess, setSyncSuccess] = useState<string | null>(null);
+  const [fromDate, setFromDate] = useState<string>('');
+  const [lastSyncDate, setLastSyncDate] = useState<string | null>(null);
 
   // Derived kiteStatus from allStatus for the active account
   const kiteStatus: ZerodhaStatus | null = allStatus ? allStatus[activeAccount] : null;
@@ -153,6 +157,29 @@ export default function ZerodhaTab() {
 
     checkKiteStatus();
   }, []);
+
+  // Reload sync metadata when account changes
+  useEffect(() => {
+    loadSyncMeta();
+  }, [activeAccount]);
+
+  const loadSyncMeta = async () => {
+    try {
+      const meta = await fetchSyncMeta(activeAccount);
+      setLastSyncDate(meta.lastOrderSyncDate || null);
+      // Set fromDate to day after last sync, or empty
+      if (meta.lastOrderSyncDate) {
+        const nextDay = new Date(meta.lastOrderSyncDate);
+        nextDay.setDate(nextDay.getDate() + 1);
+        const minDate = nextDay.toISOString().split('T')[0];
+        setFromDate(minDate);
+      } else {
+        setFromDate('');
+      }
+    } catch {
+      setLastSyncDate(null);
+    }
+  };
 
   const checkKiteStatus = async () => {
     setLoadingStatus(true);
@@ -187,7 +214,7 @@ export default function ZerodhaTab() {
     setSyncingOrders(true);
     setSyncError(null);
     try {
-      const { orders, count } = await fetchZerodhaOrders(activeAccount);
+      const { orders, count } = await fetchZerodhaOrders(activeAccount, fromDate || undefined);
       const mapped: ZerodhaOrder[] = orders.map((o: any) => ({
         id: o.id || uuidv4(),
         orderId: o.orderId || o.id,
@@ -200,9 +227,12 @@ export default function ZerodhaTab() {
         status: o.status,
         productType: o.productType,
         instrumentType: o.instrumentType,
+        accountType: o.accountType || activeAccount,
       }));
       dispatch({ type: 'SET_ZERODHA_ORDERS', payload: mapped });
       setSyncSuccess(`Synced ${count} orders from Zerodha (${activeAccount})`);
+      // Reload sync meta to get updated last sync date
+      await loadSyncMeta();
     } catch (err: any) {
       if (err.message === 'SESSION_EXPIRED') {
         setSyncError(`Zerodha session expired (${activeAccount}). Please login again.`);
@@ -232,6 +262,7 @@ export default function ZerodhaTab() {
         pnl: h.pnl,
         dayChange: h.dayChange,
         dayChangePercent: h.dayChangePercent,
+        accountType: h.accountType || activeAccount,
       }));
       dispatch({ type: 'SET_ZERODHA_HOLDINGS', payload: mapped });
       setSyncSuccess(`Synced ${count} holdings from Zerodha (${activeAccount})`);
@@ -254,17 +285,19 @@ export default function ZerodhaTab() {
     await Promise.all([handleSyncOrders(), handleSyncHoldings()]);
   };
 
-  const filteredOrders = state.globalTickerFilter
+  const filteredOrders = (state.globalTickerFilter
     ? state.zerodhaOrders.filter((o) =>
         o.ticker.toUpperCase().includes(state.globalTickerFilter.toUpperCase())
       )
-    : state.zerodhaOrders;
+    : state.zerodhaOrders
+  ).filter((o) => !o.accountType || o.accountType === activeAccount);
 
-  const filteredHoldings = state.globalTickerFilter
+  const filteredHoldings = (state.globalTickerFilter
     ? state.zerodhaHoldings.filter((h) =>
         h.ticker.toUpperCase().includes(state.globalTickerFilter.toUpperCase())
       )
-    : state.zerodhaHoldings;
+    : state.zerodhaHoldings
+  ).filter((h) => !h.accountType || h.accountType === activeAccount);
 
   const handleImportOrders = (data: any) => {
     const ordersArray = Array.isArray(data) ? data : [data];
@@ -306,9 +339,16 @@ export default function ZerodhaTab() {
     });
   };
 
-  const totalHoldingsValue = state.zerodhaHoldings.reduce((sum, h) => sum + h.lastPrice * h.quantity, 0);
-  const totalHoldingsPnl = state.zerodhaHoldings.reduce((sum, h) => sum + h.pnl, 0);
-  const totalInvested = state.zerodhaHoldings.reduce((sum, h) => sum + h.averagePrice * h.quantity, 0);
+  const totalHoldingsValue = filteredHoldings.reduce((sum, h) => sum + h.lastPrice * h.quantity, 0);
+  const totalHoldingsPnl = filteredHoldings.reduce((sum, h) => sum + h.pnl, 0);
+  const totalInvested = filteredHoldings.reduce((sum, h) => sum + h.averagePrice * h.quantity, 0);
+
+  // IST date formatter
+  const formatIST = (dateStr: string) => {
+    try {
+      return new Date(dateStr).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    } catch { return dateStr; }
+  };
 
   return (
     <Box>
@@ -316,14 +356,14 @@ export default function ZerodhaTab() {
       <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
         <Card sx={{ flex: 1 }}>
           <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
-            <Typography variant="caption" color="text.secondary">Total Orders</Typography>
-            <Typography variant="h5" fontWeight={700}>{state.zerodhaOrders.length}</Typography>
+            <Typography variant="caption" color="text.secondary">Total Orders ({activeAccount})</Typography>
+            <Typography variant="h5" fontWeight={700}>{filteredOrders.length}</Typography>
           </CardContent>
         </Card>
         <Card sx={{ flex: 1 }}>
           <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
-            <Typography variant="caption" color="text.secondary">Holdings</Typography>
-            <Typography variant="h5" fontWeight={700}>{state.zerodhaHoldings.length}</Typography>
+            <Typography variant="caption" color="text.secondary">Holdings ({activeAccount})</Typography>
+            <Typography variant="h5" fontWeight={700}>{filteredHoldings.length}</Typography>
           </CardContent>
         </Card>
         <Card sx={{ flex: 1 }}>
@@ -395,7 +435,7 @@ export default function ZerodhaTab() {
               />
               {kiteStatus.loginTime && (
                 <Typography variant="caption" color="text.secondary">
-                  Since {new Date(kiteStatus.loginTime).toLocaleString('en-IN')}
+                  Since {new Date(kiteStatus.loginTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
                 </Typography>
               )}
               <Tooltip title="Sync orders and holdings from Zerodha">
@@ -481,21 +521,45 @@ export default function ZerodhaTab() {
       )}
 
       {/* Orders Section */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-        <Typography variant="h6" fontWeight={600}>
-          Zerodha Orders
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 1 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
+        <Box>
+          <Typography variant="h6" fontWeight={600}>
+            Zerodha Orders ({activeAccount})
+          </Typography>
+          {lastSyncDate && (
+            <Typography variant="caption" color="text.secondary">
+              Last synced up to: {new Date(lastSyncDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })}
+            </Typography>
+          )}
+        </Box>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
           {kiteStatus?.connected && (
-            <Button
-              variant="contained"
-              size="small"
-              startIcon={syncingOrders ? <CircularProgress size={16} color="inherit" /> : <SyncIcon />}
-              onClick={handleSyncOrders}
-              disabled={syncingOrders}
-            >
-              Sync from Kite
-            </Button>
+            <>
+              <TextField
+                type="date"
+                size="small"
+                label="From Date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                inputProps={{
+                  min: lastSyncDate
+                    ? (() => { const d = new Date(lastSyncDate); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; })()
+                    : undefined,
+                  max: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+                }}
+                sx={{ width: 170 }}
+              />
+              <Button
+                variant="contained"
+                size="small"
+                startIcon={syncingOrders ? <CircularProgress size={16} color="inherit" /> : <SyncIcon />}
+                onClick={handleSyncOrders}
+                disabled={syncingOrders}
+              >
+                Sync Orders
+              </Button>
+            </>
           )}
           <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={() => setOrdersModalOpen(true)}>
             Manual Import
@@ -536,12 +600,7 @@ export default function ZerodhaTab() {
                       {order.orderId}
                     </TableCell>
                     <TableCell sx={{ fontSize: '0.8rem' }}>
-                      {new Date(order.timestamp).toLocaleString('en-IN', {
-                        day: '2-digit',
-                        month: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
+                      {formatIST(order.timestamp)}
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight={600}>{order.ticker}</Typography>
@@ -585,7 +644,7 @@ export default function ZerodhaTab() {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
         <Typography variant="h6" fontWeight={600}>
           <StorageIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-          Zerodha Holdings / Portfolio
+          Zerodha Holdings / Portfolio ({activeAccount})
         </Typography>
         <Box sx={{ display: 'flex', gap: 1 }}>
           {kiteStatus?.connected && (
