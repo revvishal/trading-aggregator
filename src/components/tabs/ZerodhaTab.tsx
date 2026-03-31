@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, {useState, useEffect, useCallback} from 'react';
 import {
   Box,
   Button,
@@ -159,10 +159,11 @@ export default function ZerodhaTab() {
   }, []);
 
   // Reload sync metadata when account changes
-  useEffect(() => {
-    loadSyncMeta();
-  }, [activeAccount]);
+  // useEffect(() => {
+  //   loadSyncMeta();
+  // }, [activeAccount]);
 
+  useEffect(() => {
   const loadSyncMeta = async () => {
     try {
       const meta = await fetchSyncMeta(activeAccount);
@@ -180,6 +181,27 @@ export default function ZerodhaTab() {
       setLastSyncDate(null);
     }
   };
+    loadSyncMeta();
+  },[activeAccount]);
+
+  const loadSyncMeta = useCallback(async () => {
+    try {
+      const meta = await fetchSyncMeta(activeAccount);
+
+      setLastSyncDate(meta.lastOrderSyncDate || null);
+
+      if (meta.lastOrderSyncDate) {
+        const nextDay = new Date(meta.lastOrderSyncDate);
+        nextDay.setDate(nextDay.getDate() + 1);
+        const minDate = nextDay.toISOString().split("T")[0];
+        setFromDate(minDate);
+      } else {
+        setFromDate("");
+      }
+    } catch {
+      setLastSyncDate(null);
+    }
+  }, [activeAccount]);
 
   const checkKiteStatus = async () => {
     setLoadingStatus(true);
