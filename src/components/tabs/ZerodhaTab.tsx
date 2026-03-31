@@ -147,13 +147,13 @@ export default function ZerodhaTab() {
     }
 
     // Fetch current status
-    checkKiteStatus();
+    checkKiteStatus(switchToSecondary);
   }, []);
 
-  const checkKiteStatus = async () => {
+  const checkKiteStatus = async (swSec : boolean) => {
     setLoadingStatus(true);
     try {
-      const status = await getZerodhaStatus(switchToSecondary);
+      const status = await getZerodhaStatus(swSec);
       setKiteStatus(status);
     } catch {
       setKiteStatus(null);
