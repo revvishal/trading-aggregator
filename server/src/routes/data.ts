@@ -173,7 +173,8 @@ router.put('/matched-trades', async (req: Request, res: Response) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query('DELETE FROM matched_trades');
+    //This should not be deleting
+    //await client.query('DELETE FROM matched_trades');
     for (const t of trades) {
       await client.query(
         `INSERT INTO matched_trades (id, alert_id, zerodha_order_id, ticker, match_type, direction, alert_quantity, zerodha_quantity, zerodha_price, alert_close, timestamp, pnl, status, account_type)
