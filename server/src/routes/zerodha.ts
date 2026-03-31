@@ -11,7 +11,6 @@ const KITE_API_SECRET = process.env.KITE_API_SECRET || '';
 const SECONDARY_KITE_API_KEY = process.env.SECONDARY_KITE_API_KEY || '';
 const SECONDARY_KITE_API_SECRET = process.env.SECONDARY_KITE_API_SECRET || '';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
-var secondary_profile = false;
 
 let kite = new KiteConnect({ api_key: KITE_API_KEY });
 // Another instance for Secondary portfolio when /login?profile=secondary is used
@@ -96,12 +95,8 @@ router.get('/login', (_req: Request, res: Response) => {
   var loginUrl = kite.getLoginURL();
   const profile = _req.query.profile as string;
   if (profile === 'secondary' ) {
-    secondary_profile = true;
     loginUrl = kite2.getLoginURL();
-  }else{
-    secondary_profile = false;
   }
-
   console.log(`[ZERODHA] Redirecting to Kite login: ${loginUrl}`);
   res.redirect(loginUrl);
 });
@@ -109,6 +104,7 @@ router.get('/login', (_req: Request, res: Response) => {
 router.get('/callback', async (req: Request, res: Response) => {
   const requestToken = req.query.request_token as string;
   const status = req.query.status as string;
+  const profile = req.query.profile as string;
 
   if (status !== 'success' || !requestToken) {
     res.redirect(`${FRONTEND_URL}?zerodha_status=error&message=Login+failed+or+cancelled`);
@@ -116,8 +112,9 @@ router.get('/callback', async (req: Request, res: Response) => {
   }
 
   try {
-    const secret = secondary_profile ? SECONDARY_KITE_API_SECRET : KITE_API_SECRET;
-    const session = await kite.generateSession(requestToken, secret);
+    console.log("Profile is Secondary",profile);
+    // const session = await kite.generateSession(requestToken, secret);
+    const session = profile === 'secondary' ? await kite.generateSession(requestToken, SECONDARY_KITE_API_SECRET) : await kite.generateSession(requestToken, KITE_API_SECRET);
 
     sessionState = {
       accessToken: session.access_token,
