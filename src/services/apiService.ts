@@ -198,8 +198,8 @@ export interface ZerodhaStatus {
   apiKeyConfigured: boolean;
 }
 
-export async function getZerodhaStatus(): Promise<ZerodhaStatus> {
-  const res = await fetch(`${API_BASE}/api/zerodha/status`, { headers: authHeaders() });
+export async function getZerodhaStatus(sec : boolean): Promise<ZerodhaStatus> {
+  const res = await fetch(sec ?`${API_BASE}/api/zerodha/status?profile=secondary` :`${API_BASE}/api/zerodha/status`, { headers: authHeaders() });
   return handleResponse(res);
 }
 

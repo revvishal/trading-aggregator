@@ -76,6 +76,10 @@ restoreSessionFromDb();
 
 router.get('/status', async (_req: Request, res: Response) => {
   // If not connected in memory, try DB restore
+  const profile = _req.query.profile as string;
+  if (profile === 'secondary' ) {
+
+  }
   if (!sessionState.isConnected) {
     await restoreSessionFromDb();
   }
@@ -83,7 +87,8 @@ router.get('/status', async (_req: Request, res: Response) => {
     connected: sessionState.isConnected,
     userId: sessionState.userId,
     loginTime: sessionState.loginTime,
-    apiKeyConfigured: !!KITE_API_KEY && KITE_API_KEY !== 'your_api_key_here',
+    apiKeyConfigured: profile === 'secondary' ? !!SECONDARY_KITE_API_KEY && SECONDARY_KITE_API_KEY !== 'your_api_key_here'
+        : !!KITE_API_KEY && KITE_API_KEY !== 'your_api_key_here'
   });
 });
 
@@ -105,16 +110,16 @@ router.get('/callback', async (req: Request, res: Response) => {
   const requestToken = req.query.request_token as string;
   const status = req.query.status as string;
   const profile = req.query.profile as string;
-
+  console.log("Profile is Secondary",profile);
   if (status !== 'success' || !requestToken) {
     res.redirect(`${FRONTEND_URL}?zerodha_status=error&message=Login+failed+or+cancelled`);
     return;
   }
 
   try {
-    console.log("Profile is Secondary",profile);
+
     // const session = await kite.generateSession(requestToken, secret);
-    const session = profile === 'secondary' ? await kite.generateSession(requestToken, SECONDARY_KITE_API_SECRET) : await kite.generateSession(requestToken, KITE_API_SECRET);
+    const session = profile === 'secondary' ? await kite2.generateSession(requestToken, SECONDARY_KITE_API_SECRET) : await kite.generateSession(requestToken, KITE_API_SECRET);
 
     sessionState = {
       accessToken: session.access_token,
