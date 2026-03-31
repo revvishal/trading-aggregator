@@ -11,9 +11,7 @@ import {
   fetchAlerts,
   saveAlerts,
   fetchOrders,
-  saveOrders,
   fetchHoldings as fetchHoldingsApi,
-  saveHoldings,
   fetchMatchedTrades,
   saveMatchedTrades,
   fetchPnlEntries,
@@ -133,17 +131,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Persist to DB on state changes (debounced)
+  // Orders and holdings are managed server-side per account during Kite sync
+  // so we don't auto-save them here to avoid overwriting account-specific data.
   useEffect(() => {
     debouncedSave('alerts', () => saveAlerts(state.alerts));
   }, [state.alerts, debouncedSave]);
 
-  useEffect(() => {
-    debouncedSave('orders', () => saveOrders(state.zerodhaOrders));
-  }, [state.zerodhaOrders, debouncedSave]);
-
-  useEffect(() => {
-    debouncedSave('holdings', () => saveHoldings(state.zerodhaHoldings));
-  }, [state.zerodhaHoldings, debouncedSave]);
 
   useEffect(() => {
     debouncedSave('matchedTrades', () => saveMatchedTrades(state.matchedTrades));

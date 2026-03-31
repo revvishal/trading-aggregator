@@ -241,32 +241,110 @@ function requireConnection(req: Request, res: Response, next: Function) {
 }
 
 router.get('/orders', requireConnection, async (req: Request, res: Response) => {
-  const session = getSession(getAccountType(req));
+  const accountType = getAccountType(req);
+  const session = getSession(accountType);
+
   try {
-    const orders = await session.kite.getOrders();
-    const mapped = orders.map((order: any) => ({
-      id: order.order_id, orderId: order.order_id, ticker: order.tradingsymbol, exchange: order.exchange,
-      type: order.transaction_type, quantity: order.quantity, price: order.average_price || order.price || 0,
-      timestamp: order.order_timestamp || order.exchange_timestamp || new Date().toISOString(),
-      status: order.status, productType: order.product, instrumentType: order.instrument_type || 'EQ',
+    // Kite getOrders() returns today's completed orders.
+    // Historical order history is built incrementally by syncing daily.
+    const allOrders = await session.kite.getOrders();
+
+    const mapped = allOrders
+      .filter((order: any) => order.status === 'COMPLETE')
+      .map((order: any) => ({
+        id: `${accountType}_${order.order_id}`,
+        orderId: order.order_id,
+        ticker: order.tradingsymbol,
+        exchange: order.exchange,
+        type: order.transaction_type,
+        quantity: order.quantity,
+        price: order.average_price || order.price || 0,
+        timestamp: order.order_timestamp || order.exchange_timestamp || new Date().toISOString(),
+        status: order.status,
+        productType: order.product,
+        instrumentType: order.instrument_type || 'EQ',
+        accountType,
+      }));
+
+    // Store orders in DB (upsert - don't duplicate)
+    for (const o of mapped) {
+      await pool.query(
+        `INSERT INTO zerodha_orders (id, order_id, ticker, exchange, type, quantity, price, timestamp, status, product_type, instrument_type, account_type)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         ON CONFLICT (id) DO UPDATE SET price = EXCLUDED.price, status = EXCLUDED.status, timestamp = EXCLUDED.timestamp`,
+        [o.id, o.orderId, o.ticker, o.exchange, o.type, o.quantity, o.price, o.timestamp, o.status, o.productType, o.instrumentType, o.accountType]
+      ).catch(() => {});
+    }
+
+    // Update last sync date
+    const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    await pool.query(
+      `UPDATE sync_metadata SET last_order_sync_date = $1, updated_at = NOW() WHERE account_type = $2`,
+      [todayIST, accountType]
+    ).catch(() => {});
+
+    // Return ALL orders for this account from DB
+    const dbResult = await pool.query(
+      'SELECT * FROM zerodha_orders WHERE account_type = $1 ORDER BY timestamp DESC',
+      [accountType]
+    );
+    const dbOrders = dbResult.rows.map((row: any) => ({
+      id: row.id, orderId: row.order_id, ticker: row.ticker, exchange: row.exchange,
+      type: row.type, quantity: row.quantity, price: parseFloat(row.price),
+      timestamp: row.timestamp, status: row.status, productType: row.product_type,
+      instrumentType: row.instrument_type, accountType: row.account_type,
     }));
-    res.json({ orders: mapped, count: mapped.length });
+
+    console.log(`[ZERODHA:${accountType}] Synced ${mapped.length} new, total ${dbOrders.length} orders`);
+    res.json({ orders: dbOrders, count: dbOrders.length, newCount: mapped.length });
   } catch (error: any) {
-    handleKiteError(error, res, getAccountType(req));
+    handleKiteError(error, res, accountType);
+  }
+});
+
+// GET sync metadata (last sync date)
+router.get('/sync-meta', async (req: Request, res: Response) => {
+  const accountType = getAccountType(req);
+  try {
+    const result = await pool.query('SELECT * FROM sync_metadata WHERE account_type = $1', [accountType]);
+    if (result.rows.length > 0) {
+      res.json({
+        accountType,
+        lastOrderSyncDate: result.rows[0].last_order_sync_date,
+        updatedAt: result.rows[0].updated_at,
+      });
+    } else {
+      res.json({ accountType, lastOrderSyncDate: null, updatedAt: null });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
 router.get('/holdings', requireConnection, async (req: Request, res: Response) => {
-  const session = getSession(getAccountType(req));
+  const accountType = getAccountType(req);
+  const session = getSession(accountType);
   try {
     const holdings = await session.kite.getHoldings();
     const mapped = holdings.map((h: any) => ({
       ticker: h.tradingsymbol, exchange: h.exchange, quantity: h.quantity, averagePrice: h.average_price,
       lastPrice: h.last_price, pnl: h.pnl, dayChange: h.day_change, dayChangePercent: h.day_change_percentage,
+      accountType,
     }));
+
+    // Replace holdings for this account in DB
+    await pool.query('DELETE FROM zerodha_holdings WHERE account_type = $1', [accountType]);
+    for (const h of mapped) {
+      await pool.query(
+        `INSERT INTO zerodha_holdings (ticker, exchange, quantity, average_price, last_price, pnl, day_change, day_change_percent, account_type)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [h.ticker, h.exchange, h.quantity, h.averagePrice, h.lastPrice, h.pnl, h.dayChange, h.dayChangePercent, h.accountType]
+      ).catch(() => {});
+    }
+
     res.json({ holdings: mapped, count: mapped.length });
   } catch (error: any) {
-    handleKiteError(error, res, getAccountType(req));
+    handleKiteError(error, res, accountType);
   }
 });
 

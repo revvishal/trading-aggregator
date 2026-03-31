@@ -150,7 +150,7 @@ export default function SignalsTab() {
           newAlerts.forEach((alert) => fetchFinancials(alert));
         }
         lastFetchRef.current = new Date().toISOString();
-        setLastSyncTime(new Date().toLocaleString('en-IN'));
+        setLastSyncTime(new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
         setNewAlertCount(0);
       }
     } catch (err: any) {
@@ -380,6 +380,7 @@ export default function SignalsTab() {
                       </TableCell>
                       <TableCell sx={{ fontSize: '0.8rem' }}>
                         {new Date(alert.timestamp).toLocaleString('en-IN', {
+                          timeZone: 'Asia/Kolkata',
                           day: '2-digit',
                           month: 'short',
                           hour: '2-digit',

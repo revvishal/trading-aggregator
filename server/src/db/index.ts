@@ -8,10 +8,13 @@ const pool = new Pool({
 export async function initDatabase(): Promise<void> {
   const client = await pool.connect();
   try {
+    // Set timezone to IST for this session
+    await client.query("SET timezone = 'Asia/Kolkata'");
+
     await client.query(`
       CREATE TABLE IF NOT EXISTS alerts (
         id TEXT PRIMARY KEY,
-        timestamp TEXT NOT NULL,
+        timestamp TIMESTAMPTZ NOT NULL,
         exchange TEXT DEFAULT 'NSE',
         close NUMERIC DEFAULT 0,
         ticker TEXT NOT NULL,
@@ -22,7 +25,7 @@ export async function initDatabase(): Promise<void> {
         strategy TEXT DEFAULT '',
         code TEXT DEFAULT '',
         status TEXT DEFAULT 'PENDING',
-        received_at TEXT NOT NULL,
+        received_at TIMESTAMPTZ NOT NULL,
         financials JSONB,
         analyst_recommendation JSONB,
         created_at TIMESTAMPTZ DEFAULT NOW()
@@ -36,10 +39,11 @@ export async function initDatabase(): Promise<void> {
         type TEXT NOT NULL,
         quantity INTEGER DEFAULT 0,
         price NUMERIC DEFAULT 0,
-        timestamp TEXT,
+        timestamp TIMESTAMPTZ,
         status TEXT DEFAULT 'COMPLETE',
         product_type TEXT DEFAULT 'CNC',
         instrument_type TEXT DEFAULT 'EQ',
+        account_type TEXT DEFAULT 'primary',
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
 
@@ -53,13 +57,14 @@ export async function initDatabase(): Promise<void> {
         pnl NUMERIC DEFAULT 0,
         day_change NUMERIC DEFAULT 0,
         day_change_percent NUMERIC DEFAULT 0,
+        account_type TEXT DEFAULT 'primary',
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
 
       CREATE TABLE IF NOT EXISTS matched_trades (
         id TEXT PRIMARY KEY,
-        alert_id TEXT,
-        zerodha_order_id TEXT,
+        alert_id TEXT NOT NULL,
+        zerodha_order_id TEXT NOT NULL,
         ticker TEXT NOT NULL,
         match_type TEXT,
         direction TEXT,
@@ -67,10 +72,12 @@ export async function initDatabase(): Promise<void> {
         zerodha_quantity INTEGER DEFAULT 0,
         zerodha_price NUMERIC DEFAULT 0,
         alert_close NUMERIC DEFAULT 0,
-        timestamp TEXT,
+        timestamp TIMESTAMPTZ,
         pnl NUMERIC,
         status TEXT DEFAULT 'MATCHED',
-        created_at TIMESTAMPTZ DEFAULT NOW()
+        account_type TEXT DEFAULT 'primary',
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(zerodha_order_id, account_type)
       );
 
       CREATE TABLE IF NOT EXISTS pnl_entries (
@@ -98,14 +105,27 @@ export async function initDatabase(): Promise<void> {
         login_time TIMESTAMPTZ NOT NULL,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
+
+      CREATE TABLE IF NOT EXISTS sync_metadata (
+        id SERIAL PRIMARY KEY,
+        account_type TEXT NOT NULL,
+        last_order_sync_date DATE,
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(account_type)
+      );
     `);
 
-    // Migration: add account_type column if missing (for existing DBs)
-    await client.query(`
-      ALTER TABLE kite_sessions ADD COLUMN IF NOT EXISTS account_type TEXT DEFAULT 'primary';
-    `).catch(() => {});
+    // Migrations for existing DBs
+    await client.query(`ALTER TABLE zerodha_orders ADD COLUMN IF NOT EXISTS account_type TEXT DEFAULT 'primary'`).catch(() => {});
+    await client.query(`ALTER TABLE zerodha_holdings ADD COLUMN IF NOT EXISTS account_type TEXT DEFAULT 'primary'`).catch(() => {});
+    await client.query(`ALTER TABLE matched_trades ADD COLUMN IF NOT EXISTS account_type TEXT DEFAULT 'primary'`).catch(() => {});
+    await client.query(`ALTER TABLE kite_sessions ADD COLUMN IF NOT EXISTS account_type TEXT DEFAULT 'primary'`).catch(() => {});
 
-    console.log('[DB] ✓ Database tables initialized');
+    // Seed sync_metadata for both accounts
+    await client.query(`INSERT INTO sync_metadata (account_type) VALUES ('primary') ON CONFLICT (account_type) DO NOTHING`).catch(() => {});
+    await client.query(`INSERT INTO sync_metadata (account_type) VALUES ('secondary') ON CONFLICT (account_type) DO NOTHING`).catch(() => {});
+
+    console.log('[DB] ✓ Database tables initialized (IST timezone)');
   } catch (error: any) {
     console.error('[DB] ✗ Failed to initialize database:', error.message);
     throw error;
@@ -114,5 +134,15 @@ export async function initDatabase(): Promise<void> {
   }
 }
 
-export { pool };
+// Helper: get current IST timestamp
+export function nowIST(): string {
+  return new Date().toLocaleString('en-CA', { timeZone: 'Asia/Kolkata', hour12: false }).replace(',', '') + '+05:30';
+}
 
+// Helper: format date to IST string
+export function toIST(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  return d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+}
+
+export { pool };
