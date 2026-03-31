@@ -8,9 +8,14 @@ const router: ReturnType<typeof Router> = Router();
 
 const KITE_API_KEY = process.env.KITE_API_KEY || '';
 const KITE_API_SECRET = process.env.KITE_API_SECRET || '';
+const SECONDARY_KITE_API_KEY = process.env.SECONDARY_KITE_API_KEY || '';
+const SECONDARY_KITE_API_SECRET = process.env.SECONDARY_KITE_API_SECRET || '';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+var secondary_profile = false;
 
 let kite = new KiteConnect({ api_key: KITE_API_KEY });
+// Another instance for Secondary portfolio when /login?profile=secondary is used
+let kite2 = new KiteConnect({ api_key: SECONDARY_KITE_API_KEY });
 
 let sessionState = {
   accessToken: '',
@@ -88,7 +93,15 @@ router.get('/login', (_req: Request, res: Response) => {
     res.status(400).json({ error: 'KITE_API_KEY not configured.' });
     return;
   }
-  const loginUrl = kite.getLoginURL();
+  var loginUrl = kite.getLoginURL();
+  const profile = _req.query.profile as string;
+  if (profile === 'secondary' ) {
+    secondary_profile = true;
+    loginUrl = kite2.getLoginURL();
+  }else{
+    secondary_profile = false;
+  }
+
   console.log(`[ZERODHA] Redirecting to Kite login: ${loginUrl}`);
   res.redirect(loginUrl);
 });
@@ -103,7 +116,8 @@ router.get('/callback', async (req: Request, res: Response) => {
   }
 
   try {
-    const session = await kite.generateSession(requestToken, KITE_API_SECRET);
+    const secret = secondary_profile ? SECONDARY_KITE_API_SECRET : KITE_API_SECRET;
+    const session = await kite.generateSession(requestToken, secret);
 
     sessionState = {
       accessToken: session.access_token,

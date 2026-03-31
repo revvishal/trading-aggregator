@@ -203,8 +203,8 @@ export async function getZerodhaStatus(): Promise<ZerodhaStatus> {
   return handleResponse(res);
 }
 
-export function getZerodhaLoginUrl(): string {
-  return `${API_BASE}/api/zerodha/login`;
+export function getZerodhaLoginUrl(sec : boolean): string {
+  return sec ? `${API_BASE}/api/zerodha/login?profile=secondary` : `${API_BASE}/api/zerodha/login`;
 }
 
 export async function disconnectZerodha(): Promise<{ success: boolean }> {

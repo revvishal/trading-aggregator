@@ -17,7 +17,7 @@ import {
   Stack,
   IconButton,
   Tooltip,
-  CircularProgress,
+  CircularProgress, Switch, FormControlLabel,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -130,6 +130,7 @@ export default function ZerodhaTab() {
   const [syncingHoldings, setSyncingHoldings] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncSuccess, setSyncSuccess] = useState<string | null>(null);
+  const [switchToSecondary, setSwitchToSecondary] = useState(false);
 
   // Check Kite connection status on mount and handle OAuth callback params
   useEffect(() => {
@@ -162,7 +163,7 @@ export default function ZerodhaTab() {
   };
 
   const handleKiteLogin = () => {
-    window.location.href = getZerodhaLoginUrl();
+    window.location.href = getZerodhaLoginUrl(switchToSecondary);
   };
 
   const handleKiteDisconnect = async () => {
@@ -424,6 +425,17 @@ export default function ZerodhaTab() {
                   Set KITE_API_KEY and KITE_API_SECRET in server/.env
                 </Typography>
               )}
+              <FormControlLabel
+                  control={
+                    <Switch
+                        size="small"
+                        checked={switchToSecondary}
+                        onChange={(e) => setSwitchToSecondary(e.target.checked)}
+                        disabled={kiteStatus?.connected}
+                    />
+                  }
+                  label={<Typography variant="body2">Switch to Secondary Profile</Typography>}
+              />
             </>
           )}
         </Box>
