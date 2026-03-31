@@ -94,10 +94,17 @@ export async function initDatabase(): Promise<void> {
         user_id TEXT NOT NULL,
         access_token TEXT NOT NULL,
         public_token TEXT DEFAULT '',
+        account_type TEXT DEFAULT 'primary',
         login_time TIMESTAMPTZ NOT NULL,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
+
+    // Migration: add account_type column if missing (for existing DBs)
+    await client.query(`
+      ALTER TABLE kite_sessions ADD COLUMN IF NOT EXISTS account_type TEXT DEFAULT 'primary';
+    `).catch(() => {});
+
     console.log('[DB] ✓ Database tables initialized');
   } catch (error: any) {
     console.error('[DB] ✗ Failed to initialize database:', error.message);

@@ -196,38 +196,49 @@ export interface ZerodhaStatus {
   userId: string;
   loginTime: string;
   apiKeyConfigured: boolean;
+  account?: string;
 }
 
-export async function getZerodhaStatus(): Promise<ZerodhaStatus> {
-  const res = await fetch(`${API_BASE}/api/zerodha/status`, { headers: authHeaders() });
+export interface ZerodhaStatusAll {
+  primary: ZerodhaStatus;
+  secondary: ZerodhaStatus;
+}
+
+export async function getZerodhaStatus(account: string = 'primary'): Promise<ZerodhaStatus> {
+  const res = await fetch(`${API_BASE}/api/zerodha/status?account=${account}`, { headers: authHeaders() });
   return handleResponse(res);
 }
 
-export function getZerodhaLoginUrl(): string {
-  return `${API_BASE}/api/zerodha/login`;
-}
-
-export async function disconnectZerodha(): Promise<{ success: boolean }> {
-  const res = await fetch(`${API_BASE}/api/zerodha/disconnect`, { method: 'POST', headers: authHeaders() });
+export async function getZerodhaStatusAll(): Promise<ZerodhaStatusAll> {
+  const res = await fetch(`${API_BASE}/api/zerodha/status/all`, { headers: authHeaders() });
   return handleResponse(res);
 }
 
-export async function fetchZerodhaOrders(): Promise<{ orders: any[]; count: number }> {
-  const res = await fetch(`${API_BASE}/api/zerodha/orders`, { headers: authHeaders() });
+export function getZerodhaLoginUrl(account: string = 'primary'): string {
+  return `${API_BASE}/api/zerodha/login?account=${account}`;
+}
+
+export async function disconnectZerodha(account: string = 'primary'): Promise<{ success: boolean }> {
+  const res = await fetch(`${API_BASE}/api/zerodha/disconnect?account=${account}`, { method: 'POST', headers: authHeaders() });
   return handleResponse(res);
 }
 
-export async function fetchZerodhaHoldings(): Promise<{ holdings: any[]; count: number }> {
-  const res = await fetch(`${API_BASE}/api/zerodha/holdings`, { headers: authHeaders() });
+export async function fetchZerodhaOrders(account: string = 'primary'): Promise<{ orders: any[]; count: number }> {
+  const res = await fetch(`${API_BASE}/api/zerodha/orders?account=${account}`, { headers: authHeaders() });
   return handleResponse(res);
 }
 
-export async function fetchZerodhaPositions(): Promise<{ positions: { net: any[]; day: any[] } }> {
-  const res = await fetch(`${API_BASE}/api/zerodha/positions`, { headers: authHeaders() });
+export async function fetchZerodhaHoldings(account: string = 'primary'): Promise<{ holdings: any[]; count: number }> {
+  const res = await fetch(`${API_BASE}/api/zerodha/holdings?account=${account}`, { headers: authHeaders() });
   return handleResponse(res);
 }
 
-export async function fetchZerodhaProfile(): Promise<{ profile: any }> {
-  const res = await fetch(`${API_BASE}/api/zerodha/profile`, { headers: authHeaders() });
+export async function fetchZerodhaPositions(account: string = 'primary'): Promise<{ positions: { net: any[]; day: any[] } }> {
+  const res = await fetch(`${API_BASE}/api/zerodha/positions?account=${account}`, { headers: authHeaders() });
+  return handleResponse(res);
+}
+
+export async function fetchZerodhaProfile(account: string = 'primary'): Promise<{ profile: any }> {
+  const res = await fetch(`${API_BASE}/api/zerodha/profile?account=${account}`, { headers: authHeaders() });
   return handleResponse(res);
 }

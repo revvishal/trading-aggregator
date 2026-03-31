@@ -18,6 +18,8 @@ import {
   IconButton,
   Tooltip,
   CircularProgress,
+  ToggleButtonGroup,
+  ToggleButton,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -31,12 +33,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { useAppContext } from '../../context/AppContext';
 import { ZerodhaOrder, ZerodhaHolding } from '../../types';
 import {
-  getZerodhaStatus,
+  getZerodhaStatusAll,
   getZerodhaLoginUrl,
   disconnectZerodha,
   fetchZerodhaOrders,
   fetchZerodhaHoldings,
   ZerodhaStatus,
+  ZerodhaStatusAll,
 } from '../../services/apiService';
 import JsonInputModal from '../common/JsonInputModal';
 
@@ -124,52 +127,57 @@ export default function ZerodhaTab() {
   const { state, dispatch } = useAppContext();
   const [ordersModalOpen, setOrdersModalOpen] = useState(false);
   const [holdingsModalOpen, setHoldingsModalOpen] = useState(false);
-  const [kiteStatus, setKiteStatus] = useState<ZerodhaStatus | null>(null);
+  const [activeAccount, setActiveAccount] = useState<'primary' | 'secondary'>('primary');
+  const [allStatus, setAllStatus] = useState<ZerodhaStatusAll | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [syncingOrders, setSyncingOrders] = useState(false);
   const [syncingHoldings, setSyncingHoldings] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncSuccess, setSyncSuccess] = useState<string | null>(null);
 
-  // Check Kite connection status on mount and handle OAuth callback params
+  // Derived kiteStatus from allStatus for the active account
+  const kiteStatus: ZerodhaStatus | null = allStatus ? allStatus[activeAccount] : null;
+
   useEffect(() => {
-    // Check if we're returning from Kite OAuth callback
     const params = new URLSearchParams(window.location.search);
     const zerodhaStatus = params.get('zerodha_status');
+    const account = params.get('account') || 'primary';
     if (zerodhaStatus === 'success') {
-      setSyncSuccess(`Connected to Zerodha as ${params.get('user') || 'user'}`);
-      // Clean up URL params
+      setSyncSuccess(`Connected to Zerodha (${account}) as ${params.get('user') || 'user'}`);
+      setActiveAccount(account === 'secondary' ? 'secondary' : 'primary');
       window.history.replaceState({}, '', window.location.pathname);
     } else if (zerodhaStatus === 'error') {
-      setSyncError(`Zerodha login failed: ${params.get('message') || 'Unknown error'}`);
+      setSyncError(`Zerodha login failed (${account}): ${params.get('message') || 'Unknown error'}`);
       window.history.replaceState({}, '', window.location.pathname);
     }
 
-    // Fetch current status
     checkKiteStatus();
   }, []);
 
   const checkKiteStatus = async () => {
     setLoadingStatus(true);
     try {
-      const status = await getZerodhaStatus();
-      setKiteStatus(status);
+      const status = await getZerodhaStatusAll();
+      setAllStatus(status);
     } catch {
-      setKiteStatus(null);
+      setAllStatus(null);
     } finally {
       setLoadingStatus(false);
     }
   };
 
   const handleKiteLogin = () => {
-    window.location.href = getZerodhaLoginUrl();
+    window.location.href = getZerodhaLoginUrl(activeAccount);
   };
 
   const handleKiteDisconnect = async () => {
     try {
-      await disconnectZerodha();
-      setKiteStatus((prev) => prev ? { ...prev, connected: false, userId: '' } : null);
-      setSyncSuccess('Disconnected from Zerodha');
+      await disconnectZerodha(activeAccount);
+      setAllStatus((prev) => prev ? {
+        ...prev,
+        [activeAccount]: { ...prev[activeAccount], connected: false, userId: '' },
+      } : null);
+      setSyncSuccess(`Disconnected from Zerodha (${activeAccount})`);
     } catch (err: any) {
       setSyncError(err.message || 'Failed to disconnect');
     }
@@ -179,7 +187,7 @@ export default function ZerodhaTab() {
     setSyncingOrders(true);
     setSyncError(null);
     try {
-      const { orders, count } = await fetchZerodhaOrders();
+      const { orders, count } = await fetchZerodhaOrders(activeAccount);
       const mapped: ZerodhaOrder[] = orders.map((o: any) => ({
         id: o.id || uuidv4(),
         orderId: o.orderId || o.id,
@@ -194,11 +202,14 @@ export default function ZerodhaTab() {
         instrumentType: o.instrumentType,
       }));
       dispatch({ type: 'SET_ZERODHA_ORDERS', payload: mapped });
-      setSyncSuccess(`Synced ${count} orders from Zerodha`);
+      setSyncSuccess(`Synced ${count} orders from Zerodha (${activeAccount})`);
     } catch (err: any) {
       if (err.message === 'SESSION_EXPIRED') {
-        setSyncError('Zerodha session expired. Please login again.');
-        setKiteStatus((prev) => prev ? { ...prev, connected: false } : null);
+        setSyncError(`Zerodha session expired (${activeAccount}). Please login again.`);
+        setAllStatus((prev) => prev ? {
+          ...prev,
+          [activeAccount]: { ...prev[activeAccount], connected: false },
+        } : null);
       } else {
         setSyncError(err.message || 'Failed to sync orders');
       }
@@ -211,7 +222,7 @@ export default function ZerodhaTab() {
     setSyncingHoldings(true);
     setSyncError(null);
     try {
-      const { holdings, count } = await fetchZerodhaHoldings();
+      const { holdings, count } = await fetchZerodhaHoldings(activeAccount);
       const mapped: ZerodhaHolding[] = holdings.map((h: any) => ({
         ticker: h.ticker,
         exchange: h.exchange,
@@ -223,11 +234,14 @@ export default function ZerodhaTab() {
         dayChangePercent: h.dayChangePercent,
       }));
       dispatch({ type: 'SET_ZERODHA_HOLDINGS', payload: mapped });
-      setSyncSuccess(`Synced ${count} holdings from Zerodha`);
+      setSyncSuccess(`Synced ${count} holdings from Zerodha (${activeAccount})`);
     } catch (err: any) {
       if (err.message === 'SESSION_EXPIRED') {
-        setSyncError('Zerodha session expired. Please login again.');
-        setKiteStatus((prev) => prev ? { ...prev, connected: false } : null);
+        setSyncError(`Zerodha session expired (${activeAccount}). Please login again.`);
+        setAllStatus((prev) => prev ? {
+          ...prev,
+          [activeAccount]: { ...prev[activeAccount], connected: false },
+        } : null);
       } else {
         setSyncError(err.message || 'Failed to sync holdings');
       }
@@ -340,11 +354,34 @@ export default function ZerodhaTab() {
 
       {/* Kite Connect Status Panel */}
       <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+        {/* Account Switcher */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
           <Typography variant="subtitle2" fontWeight={600}>
             Zerodha Kite Connect
           </Typography>
+          <ToggleButtonGroup
+            value={activeAccount}
+            exclusive
+            onChange={(_, val) => val && setActiveAccount(val)}
+            size="small"
+          >
+            <ToggleButton value="primary" sx={{ textTransform: 'none', px: 2 }}>
+              Primary
+              {allStatus?.primary.connected && (
+                <Chip label={allStatus.primary.userId} size="small" color="success" variant="outlined" sx={{ ml: 1, height: 20, fontSize: '0.65rem' }} />
+              )}
+            </ToggleButton>
+            <ToggleButton value="secondary" sx={{ textTransform: 'none', px: 2 }}>
+              Secondary
+              {allStatus?.secondary.connected && (
+                <Chip label={allStatus.secondary.userId} size="small" color="success" variant="outlined" sx={{ ml: 1, height: 20, fontSize: '0.65rem' }} />
+              )}
+            </ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
 
+        {/* Active Account Status */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
           {loadingStatus ? (
             <CircularProgress size={16} />
           ) : kiteStatus?.connected ? (
@@ -417,11 +454,13 @@ export default function ZerodhaTab() {
                 onClick={handleKiteLogin}
                 disabled={!kiteStatus?.apiKeyConfigured}
               >
-                Connect Zerodha
+                Connect {activeAccount === 'secondary' ? 'Secondary' : 'Primary'}
               </Button>
               {!kiteStatus?.apiKeyConfigured && (
                 <Typography variant="caption" color="error">
-                  Set KITE_API_KEY and KITE_API_SECRET in server/.env
+                  {activeAccount === 'secondary'
+                    ? 'Set SECONDARY_KITE_API_KEY and SECONDARY_KITE_API_SECRET in server/.env'
+                    : 'Set KITE_API_KEY and KITE_API_SECRET in server/.env'}
                 </Typography>
               )}
             </>
