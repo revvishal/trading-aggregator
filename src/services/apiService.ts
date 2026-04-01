@@ -205,6 +205,15 @@ export async function saveTickerFinancials(ticker: string, financials: any, anal
   await handleResponse(res);
 }
 
+export async function uploadFinancialsCSV(csv: string): Promise<{ success: boolean; count: number; tickers: string[] }> {
+  const res = await fetch(`${API_BASE}/api/financials/upload-csv`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ csv }),
+  });
+  return handleResponse(res);
+}
+
 // ==========================================
 // Webhook Alerts
 // ==========================================

@@ -28,7 +28,9 @@ export interface QuarterlyResult {
 
 export interface QuarterlyFinancials {
   ticker: string;
+  company?: string;
   quarters: QuarterlyResult[];
+  summary?: string;
   fetchedAt: string;
 }
 

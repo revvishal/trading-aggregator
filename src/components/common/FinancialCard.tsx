@@ -25,8 +25,8 @@ import TradingViewFundamentalWidget from '../widgets/TradingViewFundamentalWidge
 import TradingViewRecommendationWidget from '../widgets/TradingViewRecommendationWidget';
 
 interface FinancialCardProps {
-  financials?: QuarterlyFinancials;
-  recommendation?: AnalystRecommendation;
+  financials?: QuarterlyFinancials | null;
+  recommendation?: AnalystRecommendation | null;
   loading?: boolean;
   ticker?: string;
   exchange?: string;
@@ -72,7 +72,7 @@ export default function FinancialCard({ financials, recommendation, loading, tic
   return (
     <Card sx={{ mt: 1, bgcolor: 'grey.50', border: '1px solid', borderColor: 'grey.200' }}>
       <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
-        {/* Tabs: Data View | TradingView Widgets */}
+        {/* Tabs */}
         <Tabs
           value={activeTab}
           onChange={(_, v) => setActiveTab(v)}
@@ -83,26 +83,40 @@ export default function FinancialCard({ financials, recommendation, loading, tic
           <Tab label="🎯 TradingView Technical Analysis" />
         </Tabs>
 
-        {/* Tab 0: Our generated/cached data tables */}
+        {/* Tab 0: Quarterly Results from CSV data */}
         {activeTab === 0 && (
           <>
-            {financials && (
+            {financials && financials.quarters && financials.quarters.length > 0 ? (
               <>
+                {/* Header with company name and summary */}
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                   <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                    📊 Quarterly Results — {financials.ticker}
+                    📊 {financials.company ? `${financials.company} (${financials.ticker})` : financials.ticker}
                   </Typography>
                   {financials.fetchedAt && (
-                    <Tooltip title={`Cached at: ${new Date(financials.fetchedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`}>
+                    <Tooltip title={`Data loaded: ${new Date(financials.fetchedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`}>
                       <InfoOutlinedIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Tooltip>
                   )}
                 </Box>
+
+                {/* Summary chip */}
+                {financials.summary && (
+                  <Chip
+                    label={financials.summary}
+                    size="small"
+                    variant="outlined"
+                    color="info"
+                    sx={{ mb: 1.5, fontSize: '0.75rem', fontWeight: 500 }}
+                  />
+                )}
+
+                {/* Quarterly dates header row */}
                 <TableContainer>
                   <Table size="small">
                     <TableHead>
                       <TableRow>
-                        <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem' }}>Metric</TableCell>
+                        <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem', minWidth: 120 }}>Metric</TableCell>
                         {financials.quarters.map((q) => (
                           <TableCell key={q.quarter} align="right" sx={{ fontWeight: 600, fontSize: '0.75rem' }}>
                             {q.quarter}
@@ -115,7 +129,7 @@ export default function FinancialCard({ financials, recommendation, loading, tic
                         <TableCell sx={{ fontSize: '0.75rem' }}>Revenue (B)</TableCell>
                         {financials.quarters.map((q) => (
                           <TableCell key={q.quarter} align="right">
-                            <ColoredValue value={q.revenue} />
+                            <Typography variant="body2" sx={{ fontWeight: 500 }}>{q.revenue.toFixed(2)}</Typography>
                           </TableCell>
                         ))}
                       </TableRow>
@@ -136,10 +150,10 @@ export default function FinancialCard({ financials, recommendation, loading, tic
                         ))}
                       </TableRow>
                       <TableRow>
-                        <TableCell sx={{ fontSize: '0.75rem' }}>EBITDA (M)</TableCell>
+                        <TableCell sx={{ fontSize: '0.75rem' }}>EBITDA (B)</TableCell>
                         {financials.quarters.map((q) => (
                           <TableCell key={q.quarter} align="right">
-                            <ColoredValue value={q.ebitda} />
+                            <Typography variant="body2" sx={{ fontWeight: 500 }}>{q.ebitda.toFixed(2)}</Typography>
                           </TableCell>
                         ))}
                       </TableRow>
@@ -155,6 +169,15 @@ export default function FinancialCard({ financials, recommendation, loading, tic
                   </Table>
                 </TableContainer>
               </>
+            ) : (
+              <Box sx={{ py: 2, textAlign: 'center' }}>
+                <Typography variant="body2" color="text.secondary">
+                  No fundamental data available for <strong>{resolvedTicker}</strong>.
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Upload financial data CSV via the "Upload Fundamentals CSV" button above.
+                </Typography>
+              </Box>
             )}
 
             {recommendation && (
@@ -203,4 +226,3 @@ export default function FinancialCard({ financials, recommendation, loading, tic
     </Card>
   );
 }
-

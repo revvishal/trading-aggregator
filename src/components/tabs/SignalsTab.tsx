@@ -22,6 +22,11 @@ import {
   CircularProgress,
   Switch,
   FormControlLabel,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -33,11 +38,12 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import SyncIcon from '@mui/icons-material/Sync';
 import WifiIcon from '@mui/icons-material/Wifi';
 import WifiOffIcon from '@mui/icons-material/WifiOff';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppContext } from '../../context/AppContext';
 import { TradingViewAlert } from '../../types';
 import { getFinancialData, getAnalystRecommendation } from '../../services/financialService';
-import { fetchWebhookAlerts, fetchWebhookAlertCount, checkServerHealth } from '../../services/apiService';
+import { fetchWebhookAlerts, fetchWebhookAlertCount, checkServerHealth, uploadFinancialsCSV } from '../../services/apiService';
 import JsonInputModal from '../common/JsonInputModal';
 import FinancialCard from '../common/FinancialCard';
 
@@ -83,6 +89,10 @@ export default function SignalsTab() {
   const [newAlertCount, setNewAlertCount] = useState(0);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [csvDialogOpen, setCsvDialogOpen] = useState(false);
+  const [csvText, setCsvText] = useState('');
+  const [csvUploading, setCsvUploading] = useState(false);
+  const [csvResult, setCsvResult] = useState<string | null>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const lastFetchRef = useRef<string>(new Date().toISOString());
 
@@ -176,7 +186,11 @@ export default function SignalsTab() {
       ]);
       dispatch({
         type: 'UPDATE_ALERT',
-        payload: { ...alert, financials, analystRecommendation: recommendation },
+        payload: {
+          ...alert,
+          financials: financials || undefined,
+          analystRecommendation: recommendation || undefined,
+        },
       });
     } catch (e) {
       console.error('Failed to fetch financials', e);
@@ -188,6 +202,28 @@ export default function SignalsTab() {
       });
     }
   }, [dispatch]);
+
+  const handleCsvUpload = async () => {
+    if (!csvText.trim()) return;
+    setCsvUploading(true);
+    setCsvResult(null);
+    try {
+      const result = await uploadFinancialsCSV(csvText.trim());
+      setCsvResult(`✓ Uploaded ${result.count} tickers: ${result.tickers.join(', ')}`);
+      setCsvText('');
+      // Refresh financials for all current alerts that match uploaded tickers
+      const uploadedSet = new Set(result.tickers.map((t: string) => t.toUpperCase()));
+      for (const alert of state.alerts) {
+        if (uploadedSet.has(alert.Ticker.toUpperCase())) {
+          fetchFinancials(alert);
+        }
+      }
+    } catch (err: any) {
+      setCsvResult(`✗ Error: ${err.message}`);
+    } finally {
+      setCsvUploading(false);
+    }
+  };
 
   const handleImport = useCallback(
     (data: any) => {
@@ -337,6 +373,9 @@ export default function SignalsTab() {
           TradingView Signals
         </Typography>
         <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button variant="outlined" startIcon={<UploadFileIcon />} onClick={() => setCsvDialogOpen(true)} color="secondary">
+            Upload Fundamentals CSV
+          </Button>
           <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setModalOpen(true)}>
             Manual Input
           </Button>
@@ -517,6 +556,48 @@ export default function SignalsTab() {
         description="Paste the JSON payload received from TradingView webhook alert. Supports single object or array of objects."
         sampleJson={SAMPLE_ALERT}
       />
+
+      {/* CSV Upload Dialog */}
+      <Dialog open={csvDialogOpen} onClose={() => setCsvDialogOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Upload Fundamentals CSV</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Paste financial data in CSV format. The data will be stored in the database and automatically shown
+            when a matching ticker signal is received.
+          </Typography>
+          <Typography variant="caption" sx={{ fontFamily: 'monospace', display: 'block', mb: 1, bgcolor: 'grey.100', p: 1, borderRadius: 1 }}>
+            Company,Ticker,Dates,Revenue,EPS YoY,EBITDA,Op Margin,Summary{'\n'}
+            ACC,ACC,"28-Mar-25→30-Jun-25→30-Sep-25→31-Dec-25","59.92→60.36→58.96→63.91","-20.51→3.88→460.57→-62.98","7.55→7.27→8.10→6.08","8.19→7.82→9.02→4.73","Volatile earnings with weak margins"
+          </Typography>
+          <TextField
+            multiline
+            fullWidth
+            minRows={8}
+            maxRows={20}
+            value={csvText}
+            onChange={(e) => setCsvText(e.target.value)}
+            placeholder="Paste CSV content here..."
+            variant="outlined"
+            sx={{ mt: 1, fontFamily: 'monospace', fontSize: '0.85rem' }}
+          />
+          {csvResult && (
+            <Alert severity={csvResult.startsWith('✓') ? 'success' : 'error'} sx={{ mt: 1 }}>
+              {csvResult}
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setCsvDialogOpen(false); setCsvResult(null); }}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleCsvUpload}
+            disabled={csvUploading || !csvText.trim()}
+            startIcon={csvUploading ? <CircularProgress size={16} /> : <UploadFileIcon />}
+          >
+            {csvUploading ? 'Uploading...' : 'Upload & Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
