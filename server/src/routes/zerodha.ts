@@ -247,6 +247,7 @@ router.get('/orders', requireConnection, async (req: Request, res: Response) => 
   try {
     // Kite getOrders() returns today's completed orders.
     // Historical order history is built incrementally by syncing daily.
+    // Don't have option , need to go for paid version of Kite and bit completed integration. Can live with it for now.
     const allOrders = await session.kite.getOrders();
 
     const mapped = allOrders

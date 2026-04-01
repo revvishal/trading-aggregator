@@ -7,6 +7,7 @@ import { authMiddleware } from './middleware/auth';
 import { webhookRouter } from './routes/webhook';
 import { zerodhaRouter } from './routes/zerodha';
 import { dataRouter } from './routes/data';
+import { financialsRouter } from './routes/financials';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -40,6 +41,9 @@ app.use('/api/zerodha', zerodhaRouter);
 
 // Data CRUD routes (all need JWT)
 app.use('/api/data', authMiddleware, dataRouter);
+
+// Financials cache routes (need JWT)
+app.use('/api/financials', authMiddleware, financialsRouter);
 
 // Initialize DB and start server
 initDatabase()

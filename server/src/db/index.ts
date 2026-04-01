@@ -113,6 +113,14 @@ export async function initDatabase(): Promise<void> {
         updated_at TIMESTAMPTZ DEFAULT NOW(),
         UNIQUE(account_type)
       );
+
+      CREATE TABLE IF NOT EXISTS ticker_financials (
+        ticker TEXT PRIMARY KEY,
+        financials JSONB,
+        analyst_recommendation JSONB,
+        fetched_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
     `);
 
     // Migrations for existing DBs

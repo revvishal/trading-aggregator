@@ -182,6 +182,30 @@ export async function fetchSyncMeta(account: string = 'primary'): Promise<{ last
 }
 
 // ==========================================
+// Ticker Financials Cache
+// ==========================================
+
+export async function fetchTickerFinancials(ticker: string): Promise<{
+  ticker: string;
+  financials: any;
+  analystRecommendation: any;
+  fetchedAt: string | null;
+  stale: boolean;
+}> {
+  const res = await fetch(`${API_BASE}/api/financials/${encodeURIComponent(ticker)}`, { headers: authHeaders() });
+  return handleResponse(res);
+}
+
+export async function saveTickerFinancials(ticker: string, financials: any, analystRecommendation: any): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/financials/${encodeURIComponent(ticker)}`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify({ financials, analystRecommendation }),
+  });
+  await handleResponse(res);
+}
+
+// ==========================================
 // Webhook Alerts
 // ==========================================
 
