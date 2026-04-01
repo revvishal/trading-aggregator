@@ -7,21 +7,20 @@ interface TradingViewRecommendationWidgetProps {
 }
 
 /**
- * Embeds the TradingView Technical Analysis widget via iframe.
- * This approach avoids WebSocket/CORS issues on deployed environments (Vercel etc.)
+ * Embeds the TradingView Technical Analysis widget via the official widget iframe URL.
  */
 function TradingViewRecommendationWidget({ ticker, exchange = 'NSE' }: TradingViewRecommendationWidgetProps) {
   const iframeSrc = useMemo(() => {
-    const config = encodeURIComponent(JSON.stringify({
-      interval: '1W',
-      isTransparent: false,
+    const params = new URLSearchParams({
       symbol: `${exchange}:${ticker}`,
-      showIntervalTabs: true,
-      displayMode: 'single',
-      locale: 'en',
       colorTheme: 'light',
-    }));
-    return `https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.html#${config}`;
+      isTransparent: 'false',
+      showIntervalTabs: 'true',
+      displayMode: 'single',
+      interval: '1W',
+      locale: 'en',
+    });
+    return `https://www.tradingview-widget.com/embed-widget/technical-analysis/?${params.toString()}`;
   }, [ticker, exchange]);
 
   return (
@@ -35,20 +34,20 @@ function TradingViewRecommendationWidget({ ticker, exchange = 'NSE' }: TradingVi
           borderColor: 'grey.200',
           borderRadius: 1,
           overflow: 'hidden',
-          minHeight: 400,
         }}
       >
         <iframe
-          key={`${exchange}:${ticker}`}
+          key={`technical-${exchange}-${ticker}`}
           src={iframeSrc}
           title={`TradingView Technical Analysis ${exchange}:${ticker}`}
           style={{
             width: '100%',
-            height: 400,
+            height: 425,
             border: 'none',
             display: 'block',
           }}
-          sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+          allowTransparency
+          frameBorder={0}
           loading="lazy"
         />
       </Box>
@@ -57,4 +56,3 @@ function TradingViewRecommendationWidget({ ticker, exchange = 'NSE' }: TradingVi
 }
 
 export default memo(TradingViewRecommendationWidget);
-

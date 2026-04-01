@@ -7,21 +7,18 @@ interface TradingViewFundamentalWidgetProps {
 }
 
 /**
- * Embeds the TradingView Fundamental Data widget via iframe.
- * This approach avoids WebSocket/CORS issues on deployed environments (Vercel etc.)
- * by loading TradingView's widget page directly in an iframe.
+ * Embeds the TradingView Fundamental Data widget via the official widget iframe URL.
  */
 function TradingViewFundamentalWidget({ ticker, exchange = 'NSE' }: TradingViewFundamentalWidgetProps) {
   const iframeSrc = useMemo(() => {
-    const config = encodeURIComponent(JSON.stringify({
-      isTransparent: false,
-      largeChartUrl: '',
-      displayMode: 'regular',
-      colorTheme: 'light',
+    const params = new URLSearchParams({
       symbol: `${exchange}:${ticker}`,
+      colorTheme: 'light',
+      isTransparent: 'false',
+      displayMode: 'regular',
       locale: 'en',
-    }));
-    return `https://s3.tradingview.com/external-embedding/embed-widget-financials.html#${config}`;
+    });
+    return `https://www.tradingview-widget.com/embed-widget/financials/?${params.toString()}`;
   }, [ticker, exchange]);
 
   return (
@@ -35,20 +32,20 @@ function TradingViewFundamentalWidget({ ticker, exchange = 'NSE' }: TradingViewF
           borderColor: 'grey.200',
           borderRadius: 1,
           overflow: 'hidden',
-          minHeight: 450,
         }}
       >
         <iframe
-          key={`${exchange}:${ticker}`}
+          key={`fundamental-${exchange}-${ticker}`}
           src={iframeSrc}
           title={`TradingView Fundamentals ${exchange}:${ticker}`}
           style={{
             width: '100%',
-            height: 450,
+            height: 490,
             border: 'none',
             display: 'block',
           }}
-          sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+          allowTransparency
+          frameBorder={0}
           loading="lazy"
         />
       </Box>
