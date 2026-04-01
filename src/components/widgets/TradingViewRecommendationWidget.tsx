@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { Box, Typography } from '@mui/material';
 
 interface TradingViewRecommendationWidgetProps {
@@ -7,39 +7,21 @@ interface TradingViewRecommendationWidgetProps {
 }
 
 /**
- * Embeds the TradingView Technical Analysis widget showing analyst recommendations.
+ * Embeds the TradingView Technical Analysis widget via iframe.
+ * This approach avoids WebSocket/CORS issues on deployed environments (Vercel etc.)
  */
 function TradingViewRecommendationWidget({ ticker, exchange = 'NSE' }: TradingViewRecommendationWidgetProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    // Clear previous widget
-    container.innerHTML = '';
-
-    const script = document.createElement('script');
-    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js';
-    script.type = 'text/javascript';
-    script.async = true;
-    script.innerHTML = JSON.stringify({
+  const iframeSrc = useMemo(() => {
+    const config = encodeURIComponent(JSON.stringify({
       interval: '1W',
-      width: '100%',
       isTransparent: false,
-      height: 350,
       symbol: `${exchange}:${ticker}`,
       showIntervalTabs: true,
       displayMode: 'single',
       locale: 'en',
       colorTheme: 'light',
-    });
-
-    container.appendChild(script);
-
-    return () => {
-      container.innerHTML = '';
-    };
+    }));
+    return `https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.html#${config}`;
   }, [ticker, exchange]);
 
   return (
@@ -48,20 +30,31 @@ function TradingViewRecommendationWidget({ ticker, exchange = 'NSE' }: TradingVi
         TradingView Technical Analysis — {exchange}:{ticker}
       </Typography>
       <Box
-        ref={containerRef}
-        className="tradingview-widget-container"
         sx={{
           border: '1px solid',
           borderColor: 'grey.200',
           borderRadius: 1,
           overflow: 'hidden',
-          minHeight: 350,
+          minHeight: 400,
         }}
-      />
+      >
+        <iframe
+          key={`${exchange}:${ticker}`}
+          src={iframeSrc}
+          title={`TradingView Technical Analysis ${exchange}:${ticker}`}
+          style={{
+            width: '100%',
+            height: 400,
+            border: 'none',
+            display: 'block',
+          }}
+          sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+          loading="lazy"
+        />
+      </Box>
     </Box>
   );
 }
 
 export default memo(TradingViewRecommendationWidget);
-
 
