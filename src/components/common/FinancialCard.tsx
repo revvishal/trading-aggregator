@@ -41,8 +41,8 @@ function TrendIcon({ value }: { value: number }) {
 function ColoredValue({ value, suffix = '' }: { value: number; suffix?: string }) {
   const color = value > 0 ? 'success.main' : value < 0 ? 'error.main' : 'text.primary';
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-      <Typography variant="body2" sx={{ color, fontWeight: 500 }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+      <Typography variant="body2" sx={{ color, fontWeight: 500, whiteSpace: 'nowrap' }}>
         {value.toFixed(2)}{suffix}
       </Typography>
       <TrendIcon value={value} />
@@ -129,7 +129,7 @@ export default function FinancialCard({ financials, recommendation, loading, tic
                         <TableCell sx={{ fontSize: '0.75rem' }}>Revenue (B)</TableCell>
                         {financials.quarters.map((q) => (
                           <TableCell key={q.quarter} align="right">
-                            <Typography variant="body2" sx={{ fontWeight: 500 }}>{q.revenue.toFixed(2)}</Typography>
+                            <Typography variant="body2" sx={{ fontWeight: 500, whiteSpace: 'nowrap' }}>{q.revenue.toFixed(2)}</Typography>
                           </TableCell>
                         ))}
                       </TableRow>
@@ -153,7 +153,7 @@ export default function FinancialCard({ financials, recommendation, loading, tic
                         <TableCell sx={{ fontSize: '0.75rem' }}>EBITDA (B)</TableCell>
                         {financials.quarters.map((q) => (
                           <TableCell key={q.quarter} align="right">
-                            <Typography variant="body2" sx={{ fontWeight: 500 }}>{q.ebitda.toFixed(2)}</Typography>
+                            <Typography variant="body2" sx={{ fontWeight: 500, whiteSpace: 'nowrap' }}>{q.ebitda.toFixed(2)}</Typography>
                           </TableCell>
                         ))}
                       </TableRow>
