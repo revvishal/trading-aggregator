@@ -90,17 +90,26 @@ export function matchTradesWithAlerts(
 export function calculatePnL(
   alerts: TradingViewAlert[],
   matchedTrades: MatchedTrade[],
-  holdings: ZerodhaHolding[]
+  holdings: ZerodhaHolding[],
+  accountType?: string
 ): PnLEntry[] {
+  // Filter matched trades and holdings by account if specified
+  const filteredTrades = accountType
+    ? matchedTrades.filter((m) => m.accountType === accountType)
+    : matchedTrades;
+  const filteredHoldings = accountType
+    ? holdings.filter((h) => !h.accountType || h.accountType === accountType)
+    : holdings;
+
   const pnlMap = new Map<string, PnLEntry>();
-  const matchedAlertIds = new Set(matchedTrades.map((m) => m.alertId));
+  const matchedAlertIds = new Set(filteredTrades.map((m) => m.alertId));
 
   for (const alert of alerts) {
     const key = `${alert.Ticker}_${alert.Strategy}`;
     const isActioned = matchedAlertIds.has(alert.id);
 
     if (!pnlMap.has(key)) {
-      const holding = holdings.find((h) => h.ticker.toUpperCase() === alert.Ticker.toUpperCase());
+      const holding = filteredHoldings.find((h) => h.ticker.toUpperCase() === alert.Ticker.toUpperCase());
       pnlMap.set(key, {
         ticker: alert.Ticker,
         strategy: alert.Strategy,
@@ -113,12 +122,13 @@ export function calculatePnL(
         lastPrice: holding ? holding.lastPrice : alert.Close,
         actioned: isActioned,
         trades: 0,
+        accountType: accountType || 'combined',
       });
     }
 
     const entry = pnlMap.get(key)!;
 
-    const matchedTradesForAlert = matchedTrades.filter((m) => m.alertId === alert.id);
+    const matchedTradesForAlert = filteredTrades.filter((m) => m.alertId === alert.id);
     if (matchedTradesForAlert.length > 0) {
       entry.actioned = true;
       for (const matchedTrade of matchedTradesForAlert) {
@@ -137,7 +147,7 @@ export function calculatePnL(
     pnlMap.set(key, entry);
   }
 
-  for (const holding of holdings) {
+  for (const holding of filteredHoldings) {
     const existingKeys = Array.from(pnlMap.keys()).filter((k) => k.startsWith(holding.ticker.toUpperCase()));
     if (existingKeys.length > 0) {
       for (const key of existingKeys) {

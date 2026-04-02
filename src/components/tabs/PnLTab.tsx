@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   Box,
   Typography,
@@ -17,6 +17,7 @@ import {
   ToggleButtonGroup,
   Alert,
   Button,
+  Divider,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import {
@@ -34,14 +35,83 @@ import {
 } from 'recharts';
 import { useAppContext } from '../../context/AppContext';
 import { calculatePnL } from '../../services/tradeMatchingService';
+import { PnLEntry } from '../../types';
+
+// ── helper: compute summary from entries ───────────────────────────
+function summarise(entries: PnLEntry[]) {
+  const totalRealised = entries.reduce((s, e) => s + e.realisedPnl, 0);
+  const totalUnrealised = entries.reduce((s, e) => s + e.unrealisedPnl, 0);
+  const totalInvested = entries.reduce((s, e) => s + e.totalInvested, 0);
+  const totalCurrent = entries.reduce((s, e) => s + e.currentValue, 0);
+  const profitable = entries.filter((e) => e.realisedPnl + e.unrealisedPnl > 0).length;
+  const winRate = entries.length > 0 ? ((profitable / entries.length) * 100).toFixed(1) : '0';
+  return { totalRealised, totalUnrealised, totalInvested, totalCurrent, winRate };
+}
+
+// ── summary cards row ──────────────────────────────────────────────
+function SummaryCards({ label, s }: { label: string; s: ReturnType<typeof summarise> }) {
+  const total = s.totalRealised + s.totalUnrealised;
+  return (
+    <Box sx={{ mb: 2 }}>
+      {label && (
+        <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
+          {label}
+        </Typography>
+      )}
+      <Stack direction="row" spacing={2}>
+        <Card sx={{ flex: 1 }}>
+          <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+            <Typography variant="caption" color="text.secondary">Realised P&L</Typography>
+            <Typography variant="h6" fontWeight={700} color={s.totalRealised >= 0 ? 'success.main' : 'error.main'}>
+              {s.totalRealised >= 0 ? '+' : ''}₹{s.totalRealised.toLocaleString('en-IN')}
+            </Typography>
+          </CardContent>
+        </Card>
+        <Card sx={{ flex: 1 }}>
+          <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+            <Typography variant="caption" color="text.secondary">Unrealised P&L</Typography>
+            <Typography variant="h6" fontWeight={700} color={s.totalUnrealised >= 0 ? 'success.main' : 'error.main'}>
+              {s.totalUnrealised >= 0 ? '+' : ''}₹{s.totalUnrealised.toLocaleString('en-IN')}
+            </Typography>
+          </CardContent>
+        </Card>
+        <Card sx={{ flex: 1 }}>
+          <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+            <Typography variant="caption" color="text.secondary">Total P&L</Typography>
+            <Typography variant="h6" fontWeight={700} color={total >= 0 ? 'success.main' : 'error.main'}>
+              {total >= 0 ? '+' : ''}₹{total.toLocaleString('en-IN')}
+            </Typography>
+          </CardContent>
+        </Card>
+        <Card sx={{ flex: 1 }}>
+          <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+            <Typography variant="caption" color="text.secondary">Win Rate</Typography>
+            <Typography variant="h6" fontWeight={700}>{s.winRate}%</Typography>
+          </CardContent>
+        </Card>
+        <Card sx={{ flex: 1 }}>
+          <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+            <Typography variant="caption" color="text.secondary">Invested → Current</Typography>
+            <Typography variant="body2" fontWeight={600}>
+              ₹{s.totalInvested.toLocaleString('en-IN')} → ₹{s.totalCurrent.toLocaleString('en-IN')}
+            </Typography>
+          </CardContent>
+        </Card>
+      </Stack>
+    </Box>
+  );
+}
 
 export default function PnLTab() {
   const { state, dispatch } = useAppContext();
   const [filter, setFilter] = useState<'all' | 'actioned' | 'non-actioned'>('all');
+  const [portfolioView, setPortfolioView] = useState<'combined' | 'primary' | 'secondary'>('combined');
 
+  // Calculate P&L per portfolio
   const recalculate = () => {
-    const pnlEntries = calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings);
-    dispatch({ type: 'SET_PNL_ENTRIES', payload: pnlEntries });
+    // Combined (no account filter)
+    const combined = calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings);
+    dispatch({ type: 'SET_PNL_ENTRIES', payload: combined });
   };
 
   useEffect(() => {
@@ -51,30 +121,44 @@ export default function PnLTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.alerts.length, state.matchedTrades.length, state.zerodhaHoldings.length]);
 
-  let entries = state.pnlEntries;
+  // Compute per-portfolio P&L on the fly from state data
+  const primaryEntries = useMemo(
+    () => calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings, 'primary'),
+    [state.alerts, state.matchedTrades, state.zerodhaHoldings]
+  );
+  const secondaryEntries = useMemo(
+    () => calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings, 'secondary'),
+    [state.alerts, state.matchedTrades, state.zerodhaHoldings]
+  );
+  const combinedEntries = state.pnlEntries;
+
+  // Select active entries based on portfolio toggle
+  let baseEntries: PnLEntry[];
+  if (portfolioView === 'primary') baseEntries = primaryEntries;
+  else if (portfolioView === 'secondary') baseEntries = secondaryEntries;
+  else baseEntries = combinedEntries;
 
   // Apply global ticker filter
-  if (state.globalTickerFilter) {
-    entries = entries.filter((e) =>
-      e.ticker.toUpperCase().includes(state.globalTickerFilter.toUpperCase())
-    );
-  }
+  let entries = state.globalTickerFilter
+    ? baseEntries.filter((e) => e.ticker.toUpperCase().includes(state.globalTickerFilter.toUpperCase()))
+    : baseEntries;
 
   // Apply actioned filter
-  if (filter === 'actioned') {
-    entries = entries.filter((e) => e.actioned);
-  } else if (filter === 'non-actioned') {
-    entries = entries.filter((e) => !e.actioned);
-  }
+  if (filter === 'actioned') entries = entries.filter((e) => e.actioned);
+  else if (filter === 'non-actioned') entries = entries.filter((e) => !e.actioned);
 
-  const totalRealised = entries.reduce((sum, e) => sum + e.realisedPnl, 0);
-  const totalUnrealised = entries.reduce((sum, e) => sum + e.unrealisedPnl, 0);
-  const totalInvested = entries.reduce((sum, e) => sum + e.totalInvested, 0);
-  const totalCurrent = entries.reduce((sum, e) => sum + e.currentValue, 0);
   const actionedEntries = entries.filter((e) => e.actioned);
   const nonActionedEntries = entries.filter((e) => !e.actioned);
-  const profitable = entries.filter((e) => (e.realisedPnl + e.unrealisedPnl) > 0).length;
-  const winRate = entries.length > 0 ? ((profitable / entries.length) * 100).toFixed(1) : '0';
+
+  // Summaries
+  const primarySummary = summarise(primaryEntries);
+  const secondarySummary = summarise(secondaryEntries);
+  const combinedSummary = summarise(
+    state.globalTickerFilter
+      ? combinedEntries.filter((e) => e.ticker.toUpperCase().includes(state.globalTickerFilter.toUpperCase()))
+      : combinedEntries
+  );
+  const activeSummary = summarise(entries);
 
   // Chart data
   const chartData = entries.map((e) => ({
@@ -101,88 +185,66 @@ export default function PnLTab() {
 
   return (
     <Box>
-      {/* Summary Cards */}
-      <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
-        <Card sx={{ flex: 1 }}>
-          <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
-            <Typography variant="caption" color="text.secondary">Realised P&L</Typography>
-            <Typography
-              variant="h5"
-              fontWeight={700}
-              color={totalRealised >= 0 ? 'success.main' : 'error.main'}
-            >
-              {totalRealised >= 0 ? '+' : ''}₹{totalRealised.toLocaleString('en-IN')}
-            </Typography>
-          </CardContent>
-        </Card>
-        <Card sx={{ flex: 1 }}>
-          <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
-            <Typography variant="caption" color="text.secondary">Unrealised P&L</Typography>
-            <Typography
-              variant="h5"
-              fontWeight={700}
-              color={totalUnrealised >= 0 ? 'success.main' : 'error.main'}
-            >
-              {totalUnrealised >= 0 ? '+' : ''}₹{totalUnrealised.toLocaleString('en-IN')}
-            </Typography>
-          </CardContent>
-        </Card>
-        <Card sx={{ flex: 1 }}>
-          <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
-            <Typography variant="caption" color="text.secondary">Total P&L</Typography>
-            <Typography
-              variant="h5"
-              fontWeight={700}
-              color={(totalRealised + totalUnrealised) >= 0 ? 'success.main' : 'error.main'}
-            >
-              {(totalRealised + totalUnrealised) >= 0 ? '+' : ''}₹{(totalRealised + totalUnrealised).toLocaleString('en-IN')}
-            </Typography>
-          </CardContent>
-        </Card>
-        <Card sx={{ flex: 1 }}>
-          <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
-            <Typography variant="caption" color="text.secondary">Win Rate</Typography>
-            <Typography variant="h5" fontWeight={700}>{winRate}%</Typography>
-          </CardContent>
-        </Card>
-        <Card sx={{ flex: 1 }}>
-          <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
-            <Typography variant="caption" color="text.secondary">Invested / Current</Typography>
-            <Typography variant="body1" fontWeight={600}>
-              ₹{totalInvested.toLocaleString('en-IN')} → ₹{totalCurrent.toLocaleString('en-IN')}
-            </Typography>
-          </CardContent>
-        </Card>
-      </Stack>
+      {/* ── Portfolio-level Summary Cards (always visible) ────────── */}
+      <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
+        <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>
+          Portfolio P&L Overview
+        </Typography>
+        <SummaryCards label="🟢 Primary Portfolio" s={primarySummary} />
+        <SummaryCards label="🔵 Secondary Portfolio" s={secondarySummary} />
+        <Divider sx={{ my: 2 }} />
+        <SummaryCards label="📊 Combined" s={combinedSummary} />
+      </Paper>
 
-      {/* Filter + Refresh */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <ToggleButtonGroup
-          value={filter}
-          exclusive
-          onChange={(_, v) => v && setFilter(v)}
-          size="small"
-        >
-          <ToggleButton value="all">All ({entries.length})</ToggleButton>
-          <ToggleButton value="actioned">Actioned ({actionedEntries.length})</ToggleButton>
-          <ToggleButton value="non-actioned">Non-Actioned ({nonActionedEntries.length})</ToggleButton>
-        </ToggleButtonGroup>
+      {/* ── Portfolio Toggle + Actioned Filter + Refresh ──────────── */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 1 }}>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+          <ToggleButtonGroup
+            value={portfolioView}
+            exclusive
+            onChange={(_, v) => v && setPortfolioView(v)}
+            size="small"
+          >
+            <ToggleButton value="combined" sx={{ textTransform: 'none' }}>Combined</ToggleButton>
+            <ToggleButton value="primary" sx={{ textTransform: 'none' }}>Primary</ToggleButton>
+            <ToggleButton value="secondary" sx={{ textTransform: 'none' }}>Secondary</ToggleButton>
+          </ToggleButtonGroup>
+
+          <ToggleButtonGroup
+            value={filter}
+            exclusive
+            onChange={(_, v) => v && setFilter(v)}
+            size="small"
+          >
+            <ToggleButton value="all">All ({entries.length})</ToggleButton>
+            <ToggleButton value="actioned">Actioned ({actionedEntries.length})</ToggleButton>
+            <ToggleButton value="non-actioned">Non-Actioned ({nonActionedEntries.length})</ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
         <Button variant="outlined" startIcon={<RefreshIcon />} onClick={recalculate}>
           Recalculate P&L
         </Button>
       </Box>
 
+      {/* ── Active view summary ──────────────────────────────────── */}
+      {portfolioView !== 'combined' && (
+        <SummaryCards
+          label={portfolioView === 'primary' ? '🟢 Primary — Filtered' : '🔵 Secondary — Filtered'}
+          s={activeSummary}
+        />
+      )}
+
       {entries.length === 0 ? (
         <Alert severity="info">
-          No P&L data available. Import signals and run trade matching first.
+          No P&L data available{portfolioView !== 'combined' ? ` for ${portfolioView} portfolio` : ''}. Import signals and run trade matching first.
         </Alert>
       ) : (
         <>
-          {/* Charts */}
+          {/* ── Charts ───────────────────────────────────────────── */}
           <Stack direction="row" spacing={2} sx={{ mb: 4 }}>
             <Paper variant="outlined" sx={{ flex: 2, p: 2 }}>
               <Typography variant="subtitle2" fontWeight={600} gutterBottom>
-                P&L by Ticker
+                P&L by Ticker {portfolioView !== 'combined' && `(${portfolioView})`}
               </Typography>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={chartData}>
@@ -212,15 +274,7 @@ export default function PnLTab() {
               {pieData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
-                    <Pie
-                      data={pieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={100}
-                      dataKey="value"
-                      label={({ name, value }) => `${name}: ${value}`}
-                    >
+                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} dataKey="value" label={({ name, value }) => `${name}: ${value}`}>
                       {pieData.map((entry, index) => (
                         <Cell key={index} fill={entry.fill} />
                       ))}
@@ -236,9 +290,9 @@ export default function PnLTab() {
             </Paper>
           </Stack>
 
-          {/* Strategy Summary */}
+          {/* ── Strategy Summary ─────────────────────────────────── */}
           <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>
-            P&L by Strategy
+            P&L by Strategy {portfolioView !== 'combined' && `(${portfolioView})`}
           </Typography>
           <TableContainer component={Paper} variant="outlined" sx={{ mb: 4 }}>
             <Table size="small">
@@ -256,9 +310,7 @@ export default function PnLTab() {
                   const total = s.realised + s.unrealised;
                   return (
                     <TableRow key={i} hover>
-                      <TableCell>
-                        <Chip label={s.strategy} size="small" variant="outlined" />
-                      </TableCell>
+                      <TableCell><Chip label={s.strategy} size="small" variant="outlined" /></TableCell>
                       <TableCell>{s.trades}</TableCell>
                       <TableCell>
                         <Typography variant="body2" color={s.realised >= 0 ? 'success.main' : 'error.main'} fontWeight={500}>
@@ -282,9 +334,9 @@ export default function PnLTab() {
             </Table>
           </TableContainer>
 
-          {/* Detailed P&L Table */}
+          {/* ── Detailed P&L Table ───────────────────────────────── */}
           <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>
-            Detailed P&L
+            Detailed P&L {portfolioView !== 'combined' && `(${portfolioView})`}
           </Typography>
           <TableContainer component={Paper} variant="outlined">
             <Table size="small">
@@ -309,12 +361,8 @@ export default function PnLTab() {
                   const total = entry.realisedPnl + entry.unrealisedPnl;
                   return (
                     <TableRow key={i} hover>
-                      <TableCell>
-                        <Typography variant="body2" fontWeight={600}>{entry.ticker}</Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Chip label={entry.strategy || '-'} size="small" variant="outlined" />
-                      </TableCell>
+                      <TableCell><Typography variant="body2" fontWeight={600}>{entry.ticker}</Typography></TableCell>
+                      <TableCell><Chip label={entry.strategy || '-'} size="small" variant="outlined" /></TableCell>
                       <TableCell>{entry.quantity}</TableCell>
                       <TableCell>₹{entry.averageBuyPrice.toLocaleString('en-IN')}</TableCell>
                       <TableCell>₹{entry.lastPrice.toLocaleString('en-IN')}</TableCell>
@@ -355,4 +403,3 @@ export default function PnLTab() {
     </Box>
   );
 }
-

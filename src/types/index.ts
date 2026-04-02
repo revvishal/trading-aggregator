@@ -105,6 +105,7 @@ export interface PnLEntry {
   lastPrice: number;
   actioned: boolean;
   trades: number;
+  accountType?: string;
 }
 
 export interface AppState {
