@@ -138,6 +138,7 @@ export default function ZerodhaTab() {
   const [syncSuccess, setSyncSuccess] = useState<string | null>(null);
   const [fromDate, setFromDate] = useState<string>('');
   const [lastSyncDate, setLastSyncDate] = useState<string | null>(null);
+  const [holdingsSortDir, setHoldingsSortDir] = useState<'asc' | 'desc'>('desc');
 
   // Derived kiteStatus from allStatus for the active account
   const kiteStatus: ZerodhaStatus | null = allStatus ? allStatus[activeAccount] : null;
@@ -364,16 +365,7 @@ export default function ZerodhaTab() {
   const totalHoldingsValue = filteredHoldings.reduce((sum, h) => sum + h.lastPrice * h.quantity, 0);
   const totalHoldingsPnl = filteredHoldings.reduce((sum, h) => sum + h.pnl, 0);
   const totalInvested = filteredHoldings.reduce((sum, h) => sum + h.averagePrice * h.quantity, 0);
-  type Order = 'asc' | 'desc';
-  const [pnlOrder, setPnlOrder] = useState<Order>('desc');
 
-  const handlePnlSort = () => {
-    setPnlOrder(prev => prev === 'asc' ? 'desc' : 'asc');
-  };
-
-  const sortedHoldings = [...filteredHoldings].sort((a, b) =>
-      pnlOrder === 'asc' ? a.pnl - b.pnl : b.pnl - a.pnl
-  );
   // IST date formatter
   const formatIST = (dateStr: string) => {
     try {
@@ -713,20 +705,22 @@ export default function ZerodhaTab() {
                 <TableCell sx={{ fontWeight: 600 }}>LTP</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Invested</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Current</TableCell>
-                <TableCell sx={{ fontWeight: 600 }} sortDirection={pnlOrder}>
+                <TableCell sx={{ fontWeight: 600 }}>
                   <TableSortLabel
                     active
-                    direction={pnlOrder}
-                    onClick={handlePnlSort}
+                    direction={holdingsSortDir}
+                    onClick={() => setHoldingsSortDir(holdingsSortDir === 'asc' ? 'desc' : 'asc')}
                   >
                     P&L
                   </TableSortLabel>
                 </TableCell>
-                <TableCell sx={{ fontWeight: 600 }} >Day Change</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Day Change</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {filteredHoldings.map((holding, i) => (
+              {[...filteredHoldings]
+                .sort((a, b) => holdingsSortDir === 'asc' ? a.pnl - b.pnl : b.pnl - a.pnl)
+                .map((holding, i) => (
                 <TableRow key={i} hover>
                   <TableCell>
                     <Typography variant="body2" fontWeight={600}>{holding.ticker}</Typography>
