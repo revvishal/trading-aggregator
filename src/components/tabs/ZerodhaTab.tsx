@@ -20,7 +20,7 @@ import {
   CircularProgress,
   ToggleButtonGroup,
   ToggleButton,
-  TextField,
+  TextField, TableSortLabel,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -364,7 +364,16 @@ export default function ZerodhaTab() {
   const totalHoldingsValue = filteredHoldings.reduce((sum, h) => sum + h.lastPrice * h.quantity, 0);
   const totalHoldingsPnl = filteredHoldings.reduce((sum, h) => sum + h.pnl, 0);
   const totalInvested = filteredHoldings.reduce((sum, h) => sum + h.averagePrice * h.quantity, 0);
+  type Order = 'asc' | 'desc';
+  const [pnlOrder, setPnlOrder] = useState<Order>('desc');
 
+  const handlePnlSort = () => {
+    setPnlOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+  };
+
+  const sortedHoldings = [...filteredHoldings].sort((a, b) =>
+      pnlOrder === 'asc' ? a.pnl - b.pnl : b.pnl - a.pnl
+  );
   // IST date formatter
   const formatIST = (dateStr: string) => {
     try {
@@ -704,8 +713,16 @@ export default function ZerodhaTab() {
                 <TableCell sx={{ fontWeight: 600 }}>LTP</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Invested</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Current</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>P&L</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Day Change</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} sortDirection={pnlOrder}>
+                  <TableSortLabel
+                    active
+                    direction={pnlOrder}
+                    onClick={handlePnlSort}
+                  >
+                    P&L
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell sx={{ fontWeight: 600 }} >Day Change</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
