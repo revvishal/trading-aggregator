@@ -40,6 +40,8 @@ import {
   fetchZerodhaOrders,
   fetchZerodhaHoldings,
   fetchSyncMeta,
+  saveOrders,
+  saveHoldings,
   ZerodhaStatus,
   ZerodhaStatusAll,
 } from '../../services/apiService';
@@ -58,6 +60,7 @@ const SAMPLE_ORDERS = JSON.stringify(
       status: 'COMPLETE',
       productType: 'CNC',
       instrumentType: 'EQ',
+      accountType: 'primary'
     },
     {
       orderId: 'ZRD002',
@@ -70,6 +73,7 @@ const SAMPLE_ORDERS = JSON.stringify(
       status: 'COMPLETE',
       productType: 'CNC',
       instrumentType: 'EQ',
+      accountType: 'secondary'
     },
     {
       orderId: 'ZRD003',
@@ -82,6 +86,7 @@ const SAMPLE_ORDERS = JSON.stringify(
       status: 'COMPLETE',
       productType: 'CNC',
       instrumentType: 'EQ',
+      accountType: 'primary'
     },
   ],
   null,
@@ -99,6 +104,7 @@ const SAMPLE_HOLDINGS = JSON.stringify(
       pnl: 690,
       dayChange: 12.5,
       dayChangePercent: 1.48,
+      accountType: 'primary'
     },
     {
       ticker: 'RELIANCE',
@@ -109,6 +115,7 @@ const SAMPLE_HOLDINGS = JSON.stringify(
       pnl: 600,
       dayChange: -15.0,
       dayChangePercent: -0.59,
+      accountType: 'secondary'
     },
     {
       ticker: 'INFY',
@@ -119,6 +126,7 @@ const SAMPLE_HOLDINGS = JSON.stringify(
       pnl: 1000,
       dayChange: 8.5,
       dayChangePercent: 0.53,
+      accountType: 'primary'
     },
   ],
   null,
@@ -322,7 +330,7 @@ export default function ZerodhaTab() {
     : state.zerodhaHoldings
   ).filter((h) => !h.accountType || h.accountType === activeAccount);
 
-  const handleImportOrders = (data: any) => {
+  const handleImportOrders = async (data: any) => {
     const ordersArray = Array.isArray(data) ? data : [data];
     const newOrders: ZerodhaOrder[] = ordersArray.map((item: any) => ({
       id: uuidv4(),
@@ -336,11 +344,28 @@ export default function ZerodhaTab() {
       status: (item.status || 'COMPLETE').toUpperCase(),
       productType: item.productType || item.product || 'CNC',
       instrumentType: item.instrumentType || item.instrument_type || 'EQ',
+      accountType: activeAccount,
     }));
-    dispatch({ type: 'ADD_ZERODHA_ORDERS', payload: newOrders });
+    // Merge with existing orders for this account
+    const existingAccountOrders = state.zerodhaOrders.filter(
+      (o) => o.accountType === activeAccount
+    );
+    const otherAccountOrders = state.zerodhaOrders.filter(
+      (o) => o.accountType && o.accountType !== activeAccount
+    );
+    const mergedAccountOrders = [...existingAccountOrders, ...newOrders];
+    // Update state with all orders
+    dispatch({ type: 'SET_ZERODHA_ORDERS', payload: [...otherAccountOrders, ...mergedAccountOrders] });
+    // Persist merged orders for this account to DB
+    try {
+      await saveOrders(mergedAccountOrders, activeAccount);
+      setSyncSuccess(`Imported ${newOrders.length} orders to ${activeAccount} portfolio and saved to DB`);
+    } catch (err: any) {
+      setSyncError(`Orders imported to UI but failed to save to DB: ${err.message}`);
+    }
   };
 
-  const handleImportHoldings = (data: any) => {
+  const handleImportHoldings = async (data: any) => {
     const holdingsArray = Array.isArray(data) ? data : [data];
     const newHoldings: ZerodhaHolding[] = holdingsArray.map((item: any) => ({
       ticker: (item.ticker || item.tradingsymbol || '').trim(),
@@ -351,15 +376,34 @@ export default function ZerodhaTab() {
       pnl: Number(item.pnl) || 0,
       dayChange: Number(item.dayChange || item.day_change) || 0,
       dayChangePercent: Number(item.dayChangePercent || item.day_change_percentage) || 0,
+      accountType: activeAccount,
     }));
-    dispatch({ type: 'SET_ZERODHA_HOLDINGS', payload: newHoldings });
+    // Replace holdings for this account, keep other account's holdings
+    const otherAccountHoldings = state.zerodhaHoldings.filter(
+      (h) => h.accountType && h.accountType !== activeAccount
+    );
+    dispatch({ type: 'SET_ZERODHA_HOLDINGS', payload: [...otherAccountHoldings, ...newHoldings] });
+    // Persist to DB for this account
+    try {
+      await saveHoldings(newHoldings, activeAccount);
+      setSyncSuccess(`Imported ${newHoldings.length} holdings to ${activeAccount} portfolio and saved to DB`);
+    } catch (err: any) {
+      setSyncError(`Holdings imported to UI but failed to save to DB: ${err.message}`);
+    }
   };
 
-  const handleDeleteOrder = (id: string) => {
-    dispatch({
-      type: 'SET_ZERODHA_ORDERS',
-      payload: state.zerodhaOrders.filter((o) => o.id !== id),
-    });
+  const handleDeleteOrder = async (id: string) => {
+    const orderToDelete = state.zerodhaOrders.find((o) => o.id === id);
+    const account = orderToDelete?.accountType || activeAccount;
+    const updatedOrders = state.zerodhaOrders.filter((o) => o.id !== id);
+    dispatch({ type: 'SET_ZERODHA_ORDERS', payload: updatedOrders });
+    // Persist remaining orders for this account to DB
+    try {
+      const remainingAccountOrders = updatedOrders.filter((o) => o.accountType === account);
+      await saveOrders(remainingAccountOrders, account);
+    } catch (err: any) {
+      setSyncError(`Order removed from UI but failed to update DB: ${err.message}`);
+    }
   };
 
   const totalHoldingsValue = filteredHoldings.reduce((sum, h) => sum + h.lastPrice * h.quantity, 0);
