@@ -80,6 +80,9 @@ export async function initDatabase(): Promise<void> {
         UNIQUE(zerodha_order_id, account_type)
       );
 
+      -- Add holding_avg_buy_price column if not exists
+      ALTER TABLE matched_trades ADD COLUMN IF NOT EXISTS holding_avg_buy_price NUMERIC DEFAULT NULL;
+
       CREATE TABLE IF NOT EXISTS pnl_entries (
         id SERIAL PRIMARY KEY,
         ticker TEXT NOT NULL,

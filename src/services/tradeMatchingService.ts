@@ -63,6 +63,14 @@ export function matchTradesWithAlerts(
       else if (alert.OrderType === 'ADD') matchType = 'PARTIAL_ENTRY';
       else matchType = 'PARTIAL_EXIT';
 
+      // Snapshot holding avg buy price at match time (survives full exit when holding disappears)
+      const account = bestOrder.accountType || 'primary';
+      const holding = holdings.find(
+        (h) =>
+          h.ticker.toUpperCase() === alert.Ticker.toUpperCase() &&
+          (!h.accountType || h.accountType === account)
+      );
+
       newMatches.push({
         id: uuidv4(),
         alertId: alert.id,
@@ -76,7 +84,8 @@ export function matchTradesWithAlerts(
         alertClose: alert.Close,
         timestamp: bestOrder.timestamp,
         status: 'MATCHED',
-        accountType: bestOrder.accountType || 'primary',
+        accountType: account,
+        holdingAvgBuyPrice: holding ? holding.averagePrice : undefined,
       });
 
       newlyMatchedOrderIds.add(bestOrder.id);
@@ -138,17 +147,21 @@ export function calculatePnL(
           entry.quantity += mt.zerodhaQuantity;
           entry.totalInvested += mt.zerodhaPrice * mt.zerodhaQuantity;
         } else {
-          // SELL/REMOVE: use holding avg buy price when available, else fall back to matched-trade avg
-          const holding = filteredHoldings.find(
-            (h) =>
-              h.ticker.toUpperCase() === mt.ticker.toUpperCase() &&
-              (!mt.accountType || !h.accountType || h.accountType === mt.accountType)
-          );
-          const buyPrice = holding
-            ? holding.averagePrice
-            : entry.quantity > 0
-              ? entry.totalInvested / entry.quantity
-              : mt.alertClose;
+          // SELL/REMOVE: use persisted holding avg buy price, fall back to live holding, then matched-trade avg
+          const buyPrice = mt.holdingAvgBuyPrice
+            ? mt.holdingAvgBuyPrice
+            : (() => {
+                const holding = filteredHoldings.find(
+                  (h) =>
+                    h.ticker.toUpperCase() === mt.ticker.toUpperCase() &&
+                    (!mt.accountType || !h.accountType || h.accountType === mt.accountType)
+                );
+                return holding
+                  ? holding.averagePrice
+                  : entry.quantity > 0
+                    ? entry.totalInvested / entry.quantity
+                    : mt.alertClose;
+              })();
           entry.realisedPnl += (mt.zerodhaPrice - buyPrice) * mt.zerodhaQuantity;
           // Reduce qty and invested proportionally
           const soldQty = Math.min(mt.zerodhaQuantity, entry.quantity);

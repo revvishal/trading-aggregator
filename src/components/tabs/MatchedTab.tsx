@@ -199,13 +199,13 @@ export default function MatchedTab() {
             <TableBody>
               {filteredMatches.map((trade) => {
                 const isSellOrRemove = trade.direction === 'SELL' || trade.direction === 'REMOVE';
-                // Look up holding avg buy price for this ticker + account
+                // Use persisted avg buy price (snapshot at match time), fall back to live holding
                 const holding = state.zerodhaHoldings.find(
                   (h) =>
                     h.ticker.toUpperCase() === trade.ticker.toUpperCase() &&
                     (!trade.accountType || !h.accountType || h.accountType === trade.accountType)
                 );
-                const avgBuyPrice = holding ? holding.averagePrice : undefined;
+                const avgBuyPrice = trade.holdingAvgBuyPrice ?? (holding ? holding.averagePrice : undefined);
                 // For SELL/REMOVE: diff = zerodha sale price - avg buy price; For BUY/ADD: diff = zerodha price - signal price
                 const priceDiff = isSellOrRemove && avgBuyPrice != null
                   ? trade.zerodhaPrice - avgBuyPrice

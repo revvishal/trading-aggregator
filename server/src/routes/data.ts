@@ -153,10 +153,10 @@ router.post('/matched-trades', async (req: Request, res: Response) => {
   for (const t of trades) {
     try {
       await pool.query(
-        `INSERT INTO matched_trades (id, alert_id, zerodha_order_id, ticker, match_type, direction, alert_quantity, zerodha_quantity, zerodha_price, alert_close, timestamp, pnl, status, account_type)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        `INSERT INTO matched_trades (id, alert_id, zerodha_order_id, ticker, match_type, direction, alert_quantity, zerodha_quantity, zerodha_price, alert_close, timestamp, pnl, status, account_type, holding_avg_buy_price)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
          ON CONFLICT (id) DO NOTHING`,
-        [t.id, t.alertId, t.zerodhaOrderId, t.ticker, t.matchType, t.direction, t.alertQuantity, t.zerodhaQuantity, t.zerodhaPrice, t.alertClose, t.timestamp, t.pnl || null, t.status, t.accountType || 'primary']
+        [t.id, t.alertId, t.zerodhaOrderId, t.ticker, t.matchType, t.direction, t.alertQuantity, t.zerodhaQuantity, t.zerodhaPrice, t.alertClose, t.timestamp, t.pnl || null, t.status, t.accountType || 'primary', t.holdingAvgBuyPrice || null]
       );
       inserted++;
     } catch {
@@ -177,9 +177,9 @@ router.put('/matched-trades', async (req: Request, res: Response) => {
     //await client.query('DELETE FROM matched_trades');
     for (const t of trades) {
       await client.query(
-        `INSERT INTO matched_trades (id, alert_id, zerodha_order_id, ticker, match_type, direction, alert_quantity, zerodha_quantity, zerodha_price, alert_close, timestamp, pnl, status, account_type)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-        [t.id, t.alertId, t.zerodhaOrderId, t.ticker, t.matchType, t.direction, t.alertQuantity, t.zerodhaQuantity, t.zerodhaPrice, t.alertClose, t.timestamp, t.pnl || null, t.status, t.accountType || 'primary']
+        `INSERT INTO matched_trades (id, alert_id, zerodha_order_id, ticker, match_type, direction, alert_quantity, zerodha_quantity, zerodha_price, alert_close, timestamp, pnl, status, account_type, holding_avg_buy_price)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+        [t.id, t.alertId, t.zerodhaOrderId, t.ticker, t.matchType, t.direction, t.alertQuantity, t.zerodhaQuantity, t.zerodhaPrice, t.alertClose, t.timestamp, t.pnl || null, t.status, t.accountType || 'primary', t.holdingAvgBuyPrice || null]
       );
     }
     await client.query('COMMIT');
@@ -315,6 +315,7 @@ function rowToMatchedTrade(row: any) {
     alertClose: parseFloat(row.alert_close),
     timestamp: row.timestamp instanceof Date ? row.timestamp.toISOString() : row.timestamp,
     pnl: row.pnl ? parseFloat(row.pnl) : undefined,
+    holdingAvgBuyPrice: row.holding_avg_buy_price ? parseFloat(row.holding_avg_buy_price) : undefined,
     status: row.status,
     accountType: row.account_type,
   };

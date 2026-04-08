@@ -89,6 +89,7 @@ export interface MatchedTrade {
   alertClose: number;
   timestamp: string;
   pnl?: number;
+  holdingAvgBuyPrice?: number;
   status: 'MATCHED' | 'PARTIAL' | 'UNMATCHED';
   accountType?: string;
 }
