@@ -109,8 +109,8 @@ export default function PnLTab() {
 
   // Calculate P&L per portfolio
   const recalculate = () => {
-    // Combined (no account filter) — pass orders for T+1 pending qty/invested
-    const combined = calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings, undefined, state.zerodhaOrders);
+    // Combined (no account filter) — qty/invested from matched trades only
+    const combined = calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings);
     dispatch({ type: 'SET_PNL_ENTRIES', payload: combined });
   };
 
@@ -119,16 +119,16 @@ export default function PnLTab() {
       recalculate();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.alerts.length, state.matchedTrades.length, state.zerodhaHoldings.length, state.zerodhaOrders.length]);
+  }, [state.alerts.length, state.matchedTrades.length, state.zerodhaHoldings.length]);
 
   // Compute per-portfolio P&L on the fly from state data
   const primaryEntries = useMemo(
-    () => calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings, 'primary', state.zerodhaOrders),
-    [state.alerts, state.matchedTrades, state.zerodhaHoldings, state.zerodhaOrders]
+    () => calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings, 'primary'),
+    [state.alerts, state.matchedTrades, state.zerodhaHoldings]
   );
   const secondaryEntries = useMemo(
-    () => calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings, 'secondary', state.zerodhaOrders),
-    [state.alerts, state.matchedTrades, state.zerodhaHoldings, state.zerodhaOrders]
+    () => calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings, 'secondary'),
+    [state.alerts, state.matchedTrades, state.zerodhaHoldings]
   );
   const combinedEntries = state.pnlEntries;
 

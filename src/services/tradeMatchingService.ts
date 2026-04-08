@@ -91,50 +91,15 @@ export function calculatePnL(
   alerts: TradingViewAlert[],
   matchedTrades: MatchedTrade[],
   holdings: ZerodhaHolding[],
-  accountType?: string,
-  orders: ZerodhaOrder[] = []
+  accountType?: string
 ): PnLEntry[] {
-  // Filter matched trades, holdings, and orders by account if specified
+  // Filter matched trades and holdings by account if specified
   const filteredTrades = accountType
     ? matchedTrades.filter((m) => m.accountType === accountType)
     : matchedTrades;
   const filteredHoldings = accountType
     ? holdings.filter((h) => !h.accountType || h.accountType === accountType)
     : holdings;
-  const filteredOrders = accountType
-    ? orders.filter((o) => !o.accountType || o.accountType === accountType)
-    : orders;
-
-  // Build a map of recent BUY orders (COMPLETE) per ticker that are NOT yet in holdings.
-  // These are T+1 pending orders whose qty/invested should be combined with holdings.
-  const recentBuyOrdersByTicker = new Map<string, { qty: number; invested: number; avgPrice: number; orders: ZerodhaOrder[] }>();
-
-  const completeBuyOrders = filteredOrders.filter((o) => o.status === 'COMPLETE' && o.type === 'BUY');
-  const completeSellOrders = filteredOrders.filter((o) => o.status === 'COMPLETE' && o.type === 'SELL');
-
-  for (const order of completeBuyOrders) {
-    const tkr = order.ticker.toUpperCase();
-    if (!recentBuyOrdersByTicker.has(tkr)) {
-      recentBuyOrdersByTicker.set(tkr, { qty: 0, invested: 0, avgPrice: 0, orders: [] });
-    }
-    const entry = recentBuyOrdersByTicker.get(tkr)!;
-    entry.qty += order.quantity;
-    entry.invested += order.price * order.quantity;
-    entry.orders.push(order);
-  }
-  // Subtract completed SELL orders from the recent buy aggregation
-  for (const order of completeSellOrders) {
-    const tkr = order.ticker.toUpperCase();
-    if (recentBuyOrdersByTicker.has(tkr)) {
-      const entry = recentBuyOrdersByTicker.get(tkr)!;
-      entry.qty -= order.quantity;
-      entry.invested -= order.price * order.quantity;
-    }
-  }
-  // Compute avg price for recent orders
-  recentBuyOrdersByTicker.forEach((entry) => {
-    entry.avgPrice = entry.qty > 0 ? entry.invested / entry.qty : 0;
-  });
 
   const pnlMap = new Map<string, PnLEntry>();
   const matchedAlertIds = new Set(filteredTrades.map((m) => m.alertId));
@@ -144,53 +109,17 @@ export function calculatePnL(
     const isActioned = matchedAlertIds.has(alert.id);
 
     if (!pnlMap.has(key)) {
-      const tkrUpper = alert.Ticker.toUpperCase();
-      const holding = filteredHoldings.find((h) => h.ticker.toUpperCase() === tkrUpper);
-      const recentOrders = recentBuyOrdersByTicker.get(tkrUpper);
-
-      // Combine holdings + recent T+1 orders for qty & invested
-      const holdingQty = holding ? holding.quantity : 0;
-      const holdingInvested = holding ? holding.averagePrice * holding.quantity : 0;
-      // Only add recent order qty if ticker is NOT yet in holdings (new entry)
-      // or if there are additional orders beyond what holdings reflect
-      const recentQty = recentOrders && recentOrders.qty > 0 ? recentOrders.qty : 0;
-      const recentInvested = recentOrders && recentOrders.invested > 0 ? recentOrders.invested : 0;
-
-      let combinedQty: number;
-      let combinedInvested: number;
-      let combinedAvgPrice: number;
-      let lastPrice: number;
-
-      if (holding) {
-        // Existing holding: holdings qty/invested + recent unsettled BUY orders
-        combinedQty = holdingQty + recentQty;
-        combinedInvested = holdingInvested + recentInvested;
-        combinedAvgPrice = combinedQty > 0 ? combinedInvested / combinedQty : holding.averagePrice;
-        lastPrice = holding.lastPrice;
-      } else if (recentQty > 0) {
-        // New ticker with only recent orders (T+1 pending)
-        combinedQty = recentQty;
-        combinedInvested = recentInvested;
-        combinedAvgPrice = recentOrders!.avgPrice;
-        lastPrice = alert.Close;
-      } else {
-        // No holding, no recent orders
-        combinedQty = 0;
-        combinedInvested = 0;
-        combinedAvgPrice = 0;
-        lastPrice = alert.Close;
-      }
-
+      const holding = filteredHoldings.find((h) => h.ticker.toUpperCase() === alert.Ticker.toUpperCase());
       pnlMap.set(key, {
         ticker: alert.Ticker,
         strategy: alert.Strategy,
         realisedPnl: 0,
         unrealisedPnl: holding ? holding.pnl : 0,
-        totalInvested: combinedInvested,
-        currentValue: lastPrice * combinedQty,
-        quantity: combinedQty,
-        averageBuyPrice: combinedAvgPrice,
-        lastPrice,
+        totalInvested: 0,
+        currentValue: 0,
+        quantity: 0,
+        averageBuyPrice: 0,
+        lastPrice: holding ? holding.lastPrice : alert.Close,
         actioned: isActioned,
         trades: 0,
         accountType: accountType || 'combined',
@@ -202,14 +131,28 @@ export function calculatePnL(
     const matchedTradesForAlert = filteredTrades.filter((m) => m.alertId === alert.id);
     if (matchedTradesForAlert.length > 0) {
       entry.actioned = true;
-      for (const matchedTrade of matchedTradesForAlert) {
+      for (const mt of matchedTradesForAlert) {
         entry.trades++;
-        if (matchedTrade.matchType === 'FULL_EXIT' || matchedTrade.matchType === 'PARTIAL_EXIT') {
-          const buyPrice = entry.averageBuyPrice || matchedTrade.alertClose;
-          entry.realisedPnl += (matchedTrade.zerodhaPrice - buyPrice) * matchedTrade.zerodhaQuantity;
+        if (mt.matchType === 'FULL_ENTRY' || mt.matchType === 'PARTIAL_ENTRY') {
+          // BUY/ADD: accumulate qty and invested from matched trade
+          entry.quantity += mt.zerodhaQuantity;
+          entry.totalInvested += mt.zerodhaPrice * mt.zerodhaQuantity;
+        } else {
+          // SELL/REMOVE: reduce qty, compute realised P&L
+          const buyPrice = entry.quantity > 0
+            ? entry.totalInvested / entry.quantity
+            : mt.alertClose;
+          entry.realisedPnl += (mt.zerodhaPrice - buyPrice) * mt.zerodhaQuantity;
+          // Reduce qty and invested proportionally
+          const soldQty = Math.min(mt.zerodhaQuantity, entry.quantity);
+          if (entry.quantity > 0) {
+            entry.totalInvested -= buyPrice * soldQty;
+          }
+          entry.quantity -= soldQty;
         }
-        // Entry/add trades are already accounted for via holdings + orders combination
       }
+      // Recompute avg buy price after processing all matched trades for this alert
+      entry.averageBuyPrice = entry.quantity > 0 ? entry.totalInvested / entry.quantity : 0;
     } else {
       entry.trades++;
     }
@@ -217,28 +160,20 @@ export function calculatePnL(
     pnlMap.set(key, entry);
   }
 
-  // Update from holdings for latest price/unrealised (holdings are source of truth for settled data)
+  // Update lastPrice and unrealisedPnl from holdings (source of truth for live prices)
   for (const holding of filteredHoldings) {
     const existingKeys = Array.from(pnlMap.keys()).filter((k) => k.startsWith(holding.ticker.toUpperCase()));
-    if (existingKeys.length > 0) {
-      const tkrUpper = holding.ticker.toUpperCase();
-      const recentOrders = recentBuyOrdersByTicker.get(tkrUpper);
-      const recentQty = recentOrders && recentOrders.qty > 0 ? recentOrders.qty : 0;
-      const recentInvested = recentOrders && recentOrders.invested > 0 ? recentOrders.invested : 0;
-      const combinedQty = holding.quantity + recentQty;
-      const combinedInvested = (holding.averagePrice * holding.quantity) + recentInvested;
-
-      for (const key of existingKeys) {
-        const entry = pnlMap.get(key)!;
-        entry.unrealisedPnl = holding.pnl;
-        entry.currentValue = holding.lastPrice * combinedQty;
-        entry.quantity = combinedQty;
-        entry.totalInvested = combinedInvested;
-        entry.averageBuyPrice = combinedQty > 0 ? combinedInvested / combinedQty : holding.averagePrice;
-        entry.lastPrice = holding.lastPrice;
-      }
+    for (const key of existingKeys) {
+      const entry = pnlMap.get(key)!;
+      entry.lastPrice = holding.lastPrice;
+      entry.unrealisedPnl = holding.pnl;
     }
   }
+
+  // Compute currentValue from matched qty * lastPrice
+  Array.from(pnlMap.values()).forEach((entry) => {
+    entry.currentValue = entry.quantity * entry.lastPrice;
+  });
 
   return Array.from(pnlMap.values());
 }
