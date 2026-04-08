@@ -19,6 +19,7 @@ import {
 import SyncIcon from '@mui/icons-material/Sync';
 import LinkIcon from '@mui/icons-material/Link';
 import LinkOffIcon from '@mui/icons-material/LinkOff';
+import Tooltip from '@mui/material/Tooltip';
 import { useAppContext } from '../../context/AppContext';
 import { matchTradesWithAlerts } from '../../services/tradeMatchingService';
 import { appendMatchedTrades } from '../../services/apiService';
@@ -180,7 +181,16 @@ export default function MatchedTab() {
                 <TableCell sx={{ fontWeight: 600 }}>Zerodha Qty</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Signal Price</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Zerodha Price</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Price Diff</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>
+                  <Tooltip title="Avg buy price from portfolio holdings" arrow placement="top">
+                    <span>Avg Buy Price</span>
+                  </Tooltip>
+                </TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>
+                  <Tooltip title="BUY/ADD: Signal Price vs Zerodha Price. SELL/REMOVE: Avg Buy Price vs Zerodha Sale Price" arrow placement="top">
+                    <span>Price Diff ℹ️</span>
+                  </Tooltip>
+                </TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Time</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Portfolio</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
@@ -188,7 +198,18 @@ export default function MatchedTab() {
             </TableHead>
             <TableBody>
               {filteredMatches.map((trade) => {
-                const priceDiff = trade.zerodhaPrice - trade.alertClose;
+                const isSellOrRemove = trade.direction === 'SELL' || trade.direction === 'REMOVE';
+                // Look up holding avg buy price for this ticker + account
+                const holding = state.zerodhaHoldings.find(
+                  (h) =>
+                    h.ticker.toUpperCase() === trade.ticker.toUpperCase() &&
+                    (!trade.accountType || !h.accountType || h.accountType === trade.accountType)
+                );
+                const avgBuyPrice = holding ? holding.averagePrice : undefined;
+                // For SELL/REMOVE: diff = zerodha sale price - avg buy price; For BUY/ADD: diff = zerodha price - signal price
+                const priceDiff = isSellOrRemove && avgBuyPrice != null
+                  ? trade.zerodhaPrice - avgBuyPrice
+                  : trade.zerodhaPrice - trade.alertClose;
                 return (
                   <TableRow key={trade.id} hover>
                     <TableCell>
@@ -214,13 +235,35 @@ export default function MatchedTab() {
                     <TableCell>₹{trade.alertClose.toLocaleString('en-IN')}</TableCell>
                     <TableCell>₹{trade.zerodhaPrice.toLocaleString('en-IN')}</TableCell>
                     <TableCell>
-                      <Typography
-                        variant="body2"
-                        color={priceDiff >= 0 ? 'success.main' : 'error.main'}
-                        fontWeight={500}
+                      {avgBuyPrice != null ? (
+                        <Typography variant="body2" fontWeight={500}>
+                          ₹{avgBuyPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </Typography>
+                      ) : (
+                        <Typography variant="body2" color="text.secondary">—</Typography>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Tooltip
+                        title={
+                          isSellOrRemove
+                            ? avgBuyPrice != null
+                              ? `Sale Price (₹${trade.zerodhaPrice.toFixed(2)}) − Avg Buy (₹${avgBuyPrice.toFixed(2)})`
+                              : `Sale Price (₹${trade.zerodhaPrice.toFixed(2)}) − Signal Price (₹${trade.alertClose.toFixed(2)}) [No holding found]`
+                            : `Zerodha Price (₹${trade.zerodhaPrice.toFixed(2)}) − Signal Price (₹${trade.alertClose.toFixed(2)})`
+                        }
+                        arrow
+                        placement="top"
                       >
-                        {priceDiff >= 0 ? '+' : ''}₹{priceDiff.toFixed(2)}
-                      </Typography>
+                        <Typography
+                          variant="body2"
+                          color={priceDiff >= 0 ? 'success.main' : 'error.main'}
+                          fontWeight={500}
+                          sx={{ cursor: 'help' }}
+                        >
+                          {priceDiff >= 0 ? '+' : ''}₹{priceDiff.toFixed(2)}
+                        </Typography>
+                      </Tooltip>
                     </TableCell>
                     <TableCell sx={{ fontSize: '0.8rem' }}>
                       {new Date(trade.timestamp).toLocaleString('en-IN', {
