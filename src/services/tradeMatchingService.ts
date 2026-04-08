@@ -107,7 +107,6 @@ export function calculatePnL(
 
   // Build a map of recent BUY orders (COMPLETE) per ticker that are NOT yet in holdings.
   // These are T+1 pending orders whose qty/invested should be combined with holdings.
-  const holdingTickerSet = new Set(filteredHoldings.map((h) => h.ticker.toUpperCase()));
   const recentBuyOrdersByTicker = new Map<string, { qty: number; invested: number; avgPrice: number; orders: ZerodhaOrder[] }>();
 
   const completeBuyOrders = filteredOrders.filter((o) => o.status === 'COMPLETE' && o.type === 'BUY');
@@ -133,9 +132,9 @@ export function calculatePnL(
     }
   }
   // Compute avg price for recent orders
-  for (const [, entry] of recentBuyOrdersByTicker) {
+  recentBuyOrdersByTicker.forEach((entry) => {
     entry.avgPrice = entry.qty > 0 ? entry.invested / entry.qty : 0;
-  }
+  });
 
   const pnlMap = new Map<string, PnLEntry>();
   const matchedAlertIds = new Set(filteredTrades.map((m) => m.alertId));
