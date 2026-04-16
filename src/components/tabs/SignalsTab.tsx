@@ -256,8 +256,16 @@ export default function SignalsTab() {
   const toggleExpand = (id: string) => {
     setExpandedRows((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+        // Auto-fetch financials if not already loaded
+        const alert = state.alerts.find((a) => a.id === id);
+        if (alert && !alert.financials && !loadingFinancials.has(id)) {
+          fetchFinancials(alert);
+        }
+      }
       return next;
     });
   };
