@@ -175,6 +175,17 @@ export async function clearAllData(): Promise<void> {
   await handleResponse(res);
 }
 
+export async function fetchExitSummary(ticker: string): Promise<{
+  ticker: string;
+  totalPartialExitAmount: number;
+  totalActualPartialBuyAmount: number;
+  fullExitAmount: number;
+  actualFullBuyAmount: number;
+}> {
+  const res = await fetch(`${API_BASE}/api/data/exit-summary/${encodeURIComponent(ticker)}`, { headers: authHeaders() });
+  return handleResponse(res);
+}
+
 // Sync metadata
 export async function fetchSyncMeta(account: string = 'primary'): Promise<{ lastOrderSyncDate: string | null; updatedAt: string | null }> {
   const res = await fetch(`${API_BASE}/api/zerodha/sync-meta?account=${account}`, { headers: authHeaders() });

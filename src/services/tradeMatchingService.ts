@@ -71,6 +71,32 @@ export function matchTradesWithAlerts(
           (!h.accountType || h.accountType === account)
       );
 
+      const avgBuyPrice = holding ? holding.averagePrice : undefined;
+
+      // Compute exit amounts based on match type
+      let partialExitAmount = 0;
+      let actualPartialBuyAmount = 0;
+      let fullExitAmount = 0;
+      let actualFullBuyAmount = 0;
+
+      if (matchType === 'PARTIAL_EXIT') {
+        // REMOVE: partial exit
+        partialExitAmount = bestOrder.quantity * bestOrder.price;
+        actualPartialBuyAmount = avgBuyPrice ? bestOrder.quantity * avgBuyPrice : 0;
+      } else if (matchType === 'FULL_EXIT') {
+        // SELL: full exit — include sum of previous partial exits for this ticker
+        const previousPartialExits = [...existingMatches, ...newMatches].filter(
+          (m) => m.ticker.toUpperCase() === alert.Ticker.toUpperCase() &&
+                 m.matchType === 'PARTIAL_EXIT' &&
+                 m.accountType === account
+        );
+        const prevExitSum = previousPartialExits.reduce((sum, m) => sum + (m.partialExitAmount || 0), 0);
+        const prevBuySum = previousPartialExits.reduce((sum, m) => sum + (m.actualPartialBuyAmount || 0), 0);
+        const thisExitAmount = bestOrder.quantity * bestOrder.price;
+        fullExitAmount = prevExitSum + thisExitAmount;
+        actualFullBuyAmount = prevBuySum + (avgBuyPrice ? bestOrder.quantity * avgBuyPrice : 0);
+      }
+
       newMatches.push({
         id: uuidv4(),
         alertId: alert.id,
@@ -85,7 +111,11 @@ export function matchTradesWithAlerts(
         timestamp: bestOrder.timestamp,
         status: 'MATCHED',
         accountType: account,
-        holdingAvgBuyPrice: holding ? holding.averagePrice : undefined,
+        holdingAvgBuyPrice: avgBuyPrice,
+        partialExitAmount,
+        actualPartialBuyAmount,
+        fullExitAmount,
+        actualFullBuyAmount,
       });
 
       newlyMatchedOrderIds.add(bestOrder.id);

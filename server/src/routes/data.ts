@@ -153,10 +153,10 @@ router.post('/matched-trades', async (req: Request, res: Response) => {
   for (const t of trades) {
     try {
       await pool.query(
-        `INSERT INTO matched_trades (id, alert_id, zerodha_order_id, ticker, match_type, direction, alert_quantity, zerodha_quantity, zerodha_price, alert_close, timestamp, pnl, status, account_type, holding_avg_buy_price)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+        `INSERT INTO matched_trades (id, alert_id, zerodha_order_id, ticker, match_type, direction, alert_quantity, zerodha_quantity, zerodha_price, alert_close, timestamp, pnl, status, account_type, holding_avg_buy_price, partial_exit_amount, actual_partial_buy_amount, full_exit_amount, actual_full_buy_amount)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
          ON CONFLICT (id) DO NOTHING`,
-        [t.id, t.alertId, t.zerodhaOrderId, t.ticker, t.matchType, t.direction, t.alertQuantity, t.zerodhaQuantity, t.zerodhaPrice, t.alertClose, t.timestamp, t.pnl || null, t.status, t.accountType || 'primary', t.holdingAvgBuyPrice || null]
+        [t.id, t.alertId, t.zerodhaOrderId, t.ticker, t.matchType, t.direction, t.alertQuantity, t.zerodhaQuantity, t.zerodhaPrice, t.alertClose, t.timestamp, t.pnl || null, t.status, t.accountType || 'primary', t.holdingAvgBuyPrice || null, t.partialExitAmount || 0, t.actualPartialBuyAmount || 0, t.fullExitAmount || 0, t.actualFullBuyAmount || 0]
       );
       inserted++;
     } catch {
@@ -177,9 +177,9 @@ router.put('/matched-trades', async (req: Request, res: Response) => {
     //await client.query('DELETE FROM matched_trades');
     for (const t of trades) {
       await client.query(
-        `INSERT INTO matched_trades (id, alert_id, zerodha_order_id, ticker, match_type, direction, alert_quantity, zerodha_quantity, zerodha_price, alert_close, timestamp, pnl, status, account_type, holding_avg_buy_price)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-        [t.id, t.alertId, t.zerodhaOrderId, t.ticker, t.matchType, t.direction, t.alertQuantity, t.zerodhaQuantity, t.zerodhaPrice, t.alertClose, t.timestamp, t.pnl || null, t.status, t.accountType || 'primary', t.holdingAvgBuyPrice || null]
+        `INSERT INTO matched_trades (id, alert_id, zerodha_order_id, ticker, match_type, direction, alert_quantity, zerodha_quantity, zerodha_price, alert_close, timestamp, pnl, status, account_type, holding_avg_buy_price, partial_exit_amount, actual_partial_buy_amount, full_exit_amount, actual_full_buy_amount)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+        [t.id, t.alertId, t.zerodhaOrderId, t.ticker, t.matchType, t.direction, t.alertQuantity, t.zerodhaQuantity, t.zerodhaPrice, t.alertClose, t.timestamp, t.pnl || null, t.status, t.accountType || 'primary', t.holdingAvgBuyPrice || null, t.partialExitAmount || 0, t.actualPartialBuyAmount || 0, t.fullExitAmount || 0, t.actualFullBuyAmount || 0]
       );
     }
     await client.query('COMMIT');
@@ -232,6 +232,36 @@ router.put('/pnl-entries', async (req: Request, res: Response) => {
 
 // ==========================================
 // CLEAR ALL
+// ==========================================
+// EXIT SUMMARY by ticker
+// ==========================================
+
+router.get('/exit-summary/:ticker', async (req: Request, res: Response) => {
+  const ticker = req.params.ticker.toUpperCase();
+  try {
+    const result = await pool.query(
+      `SELECT 
+         COALESCE(SUM(partial_exit_amount), 0) AS total_partial_exit_amount,
+         COALESCE(SUM(actual_partial_buy_amount), 0) AS total_actual_partial_buy_amount,
+         COALESCE(MAX(CASE WHEN match_type = 'FULL_EXIT' THEN full_exit_amount ELSE 0 END), 0) AS full_exit_amount,
+         COALESCE(MAX(CASE WHEN match_type = 'FULL_EXIT' THEN actual_full_buy_amount ELSE 0 END), 0) AS actual_full_buy_amount
+       FROM matched_trades
+       WHERE UPPER(ticker) = $1 AND match_type IN ('PARTIAL_EXIT', 'FULL_EXIT')`,
+      [ticker]
+    );
+    const row = result.rows[0] || {};
+    res.json({
+      ticker,
+      totalPartialExitAmount: parseFloat(row.total_partial_exit_amount) || 0,
+      totalActualPartialBuyAmount: parseFloat(row.total_actual_partial_buy_amount) || 0,
+      fullExitAmount: parseFloat(row.full_exit_amount) || 0,
+      actualFullBuyAmount: parseFloat(row.actual_full_buy_amount) || 0,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ==========================================
 
 router.delete('/all', async (_req: Request, res: Response) => {
@@ -316,6 +346,10 @@ function rowToMatchedTrade(row: any) {
     timestamp: row.timestamp instanceof Date ? row.timestamp.toISOString() : row.timestamp,
     pnl: row.pnl ? parseFloat(row.pnl) : undefined,
     holdingAvgBuyPrice: row.holding_avg_buy_price ? parseFloat(row.holding_avg_buy_price) : undefined,
+    partialExitAmount: row.partial_exit_amount ? parseFloat(row.partial_exit_amount) : 0,
+    actualPartialBuyAmount: row.actual_partial_buy_amount ? parseFloat(row.actual_partial_buy_amount) : 0,
+    fullExitAmount: row.full_exit_amount ? parseFloat(row.full_exit_amount) : 0,
+    actualFullBuyAmount: row.actual_full_buy_amount ? parseFloat(row.actual_full_buy_amount) : 0,
     status: row.status,
     accountType: row.account_type,
   };

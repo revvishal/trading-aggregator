@@ -43,7 +43,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useAppContext } from '../../context/AppContext';
 import { TradingViewAlert } from '../../types';
 import { getFinancialData, getAnalystRecommendation } from '../../services/financialService';
-import { fetchWebhookAlerts, fetchWebhookAlertCount, checkServerHealth, uploadFinancialsCSV } from '../../services/apiService';
+import { fetchWebhookAlerts, fetchWebhookAlertCount, checkServerHealth, uploadFinancialsCSV, fetchExitSummary } from '../../services/apiService';
 import JsonInputModal from '../common/JsonInputModal';
 import FinancialCard from '../common/FinancialCard';
 
@@ -93,6 +93,7 @@ export default function SignalsTab() {
   const [csvText, setCsvText] = useState('');
   const [csvUploading, setCsvUploading] = useState(false);
   const [csvResult, setCsvResult] = useState<string | null>(null);
+  const [exitSummaries, setExitSummaries] = useState<Record<string, { totalPartialExitAmount: number; totalActualPartialBuyAmount: number; fullExitAmount: number; actualFullBuyAmount: number } | null>>({});
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const lastFetchRef = useRef<string>(new Date().toISOString());
 
@@ -264,6 +265,12 @@ export default function SignalsTab() {
         const alert = state.alerts.find((a) => a.id === id);
         if (alert && !alert.financials && !loadingFinancials.has(id)) {
           fetchFinancials(alert);
+        }
+        // Fetch exit summary for this ticker
+        if (alert && !exitSummaries[alert.Ticker.toUpperCase()]) {
+          fetchExitSummary(alert.Ticker).then((data) => {
+            setExitSummaries((prev) => ({ ...prev, [alert.Ticker.toUpperCase()]: data }));
+          }).catch(() => {});
         }
       }
       return next;
@@ -538,6 +545,44 @@ export default function SignalsTab() {
                                 <strong>Code:</strong> {alert.Code}
                               </Typography>
                             </Box>
+                            {/* Exit Summary */}
+                            {(() => {
+                              const es = exitSummaries[alert.Ticker.toUpperCase()];
+                              if (!es || (es.totalPartialExitAmount === 0 && es.fullExitAmount === 0)) return null;
+                              return (
+                                <Box sx={{ display: 'flex', gap: 2, mb: 1, flexWrap: 'wrap', p: 1, bgcolor: 'grey.50', borderRadius: 1, border: '1px solid', borderColor: 'grey.200' }}>
+                                  <Typography variant="caption" fontWeight={700} sx={{ width: '100%' }}>
+                                    💰 Exit Summary (Matched Trades)
+                                  </Typography>
+                                  {es.totalPartialExitAmount > 0 && (
+                                    <>
+                                      <Typography variant="caption">
+                                        <strong>Partial Exit Amount:</strong> ₹{es.totalPartialExitAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                      </Typography>
+                                      <Typography variant="caption">
+                                        <strong>Actual Partial Buy Amount:</strong> ₹{es.totalActualPartialBuyAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                      </Typography>
+                                      <Typography variant="caption" color={es.totalPartialExitAmount - es.totalActualPartialBuyAmount >= 0 ? 'success.main' : 'error.main'}>
+                                        <strong>Partial P&L:</strong> ₹{(es.totalPartialExitAmount - es.totalActualPartialBuyAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                      </Typography>
+                                    </>
+                                  )}
+                                  {es.fullExitAmount > 0 && (
+                                    <>
+                                      <Typography variant="caption">
+                                        <strong>Full Exit Amount:</strong> ₹{es.fullExitAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                      </Typography>
+                                      <Typography variant="caption">
+                                        <strong>Actual Full Buy Amount:</strong> ₹{es.actualFullBuyAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                      </Typography>
+                                      <Typography variant="caption" color={es.fullExitAmount - es.actualFullBuyAmount >= 0 ? 'success.main' : 'error.main'}>
+                                        <strong>Full Exit P&L:</strong> ₹{(es.fullExitAmount - es.actualFullBuyAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                      </Typography>
+                                    </>
+                                  )}
+                                </Box>
+                              );
+                            })()}
                             <FinancialCard
                               financials={alert.financials}
                               recommendation={alert.analystRecommendation}

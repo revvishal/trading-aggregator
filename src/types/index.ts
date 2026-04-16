@@ -90,6 +90,10 @@ export interface MatchedTrade {
   timestamp: string;
   pnl?: number;
   holdingAvgBuyPrice?: number;
+  partialExitAmount?: number;
+  actualPartialBuyAmount?: number;
+  fullExitAmount?: number;
+  actualFullBuyAmount?: number;
   status: 'MATCHED' | 'PARTIAL' | 'UNMATCHED';
   accountType?: string;
 }
