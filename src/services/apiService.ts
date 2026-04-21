@@ -177,10 +177,12 @@ export async function clearAllData(): Promise<void> {
 
 export async function fetchExitSummary(ticker: string): Promise<{
   ticker: string;
-  totalPartialExitAmount: number;
-  totalActualPartialBuyAmount: number;
-  fullExitAmount: number;
-  actualFullBuyAmount: number;
+  portfolios: Record<string, {
+    totalPartialExitAmount: number;
+    totalActualPartialBuyAmount: number;
+    fullExitAmount: number;
+    actualFullBuyAmount: number;
+  }>;
 }> {
   const res = await fetch(`${API_BASE}/api/data/exit-summary/${encodeURIComponent(ticker)}`, { headers: authHeaders() });
   return handleResponse(res);

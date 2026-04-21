@@ -93,7 +93,7 @@ export default function SignalsTab() {
   const [csvText, setCsvText] = useState('');
   const [csvUploading, setCsvUploading] = useState(false);
   const [csvResult, setCsvResult] = useState<string | null>(null);
-  const [exitSummaries, setExitSummaries] = useState<Record<string, { totalPartialExitAmount: number; totalActualPartialBuyAmount: number; fullExitAmount: number; actualFullBuyAmount: number } | null>>({});
+  const [exitSummaries, setExitSummaries] = useState<Record<string, Record<string, { totalPartialExitAmount: number; totalActualPartialBuyAmount: number; fullExitAmount: number; actualFullBuyAmount: number }>>>({});
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const lastFetchRef = useRef<string>(new Date().toISOString());
 
@@ -269,7 +269,7 @@ export default function SignalsTab() {
         // Fetch exit summary for this ticker
         if (alert && !exitSummaries[alert.Ticker.toUpperCase()]) {
           fetchExitSummary(alert.Ticker).then((data) => {
-            setExitSummaries((prev) => ({ ...prev, [alert.Ticker.toUpperCase()]: data }));
+            setExitSummaries((prev) => ({ ...prev, [alert.Ticker.toUpperCase()]: data.portfolios || {} }));
           }).catch(() => {});
         }
       }
@@ -547,39 +547,49 @@ export default function SignalsTab() {
                             </Box>
                             {/* Exit Summary */}
                             {(() => {
-                              const es = exitSummaries[alert.Ticker.toUpperCase()];
-                              if (!es || (es.totalPartialExitAmount === 0 && es.fullExitAmount === 0)) return null;
+                              const portfolios = exitSummaries[alert.Ticker.toUpperCase()];
+                              if (!portfolios || Object.keys(portfolios).length === 0) return null;
+                              const hasData = Object.values(portfolios).some(es => es.totalPartialExitAmount > 0 || es.fullExitAmount > 0);
+                              if (!hasData) return null;
                               return (
-                                <Box sx={{ display: 'flex', gap: 2, mb: 1, flexWrap: 'wrap', p: 1, bgcolor: 'grey.50', borderRadius: 1, border: '1px solid', borderColor: 'grey.200' }}>
-                                  <Typography variant="caption" fontWeight={700} sx={{ width: '100%' }}>
+                                <Box sx={{ mb: 1, p: 1, bgcolor: 'grey.50', borderRadius: 1, border: '1px solid', borderColor: 'grey.200' }}>
+                                  <Typography variant="caption" fontWeight={700} sx={{ mb: 0.5, display: 'block' }}>
                                     💰 Exit Summary (Matched Trades)
                                   </Typography>
-                                  {es.totalPartialExitAmount > 0 && (
-                                    <>
-                                      <Typography variant="caption">
-                                        <strong>Partial Exit Amount:</strong> ₹{es.totalPartialExitAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                      </Typography>
-                                      <Typography variant="caption">
-                                        <strong>Actual Partial Buy Amount:</strong> ₹{es.totalActualPartialBuyAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                      </Typography>
-                                      <Typography variant="caption" color={es.totalPartialExitAmount - es.totalActualPartialBuyAmount >= 0 ? 'success.main' : 'error.main'}>
-                                        <strong>Partial P&L:</strong> ₹{(es.totalPartialExitAmount - es.totalActualPartialBuyAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                      </Typography>
-                                    </>
-                                  )}
-                                  {es.fullExitAmount > 0 && (
-                                    <>
-                                      <Typography variant="caption">
-                                        <strong>Full Exit Amount:</strong> ₹{es.fullExitAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                      </Typography>
-                                      <Typography variant="caption">
-                                        <strong>Actual Full Buy Amount:</strong> ₹{es.actualFullBuyAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                      </Typography>
-                                      <Typography variant="caption" color={es.fullExitAmount - es.actualFullBuyAmount >= 0 ? 'success.main' : 'error.main'}>
-                                        <strong>Full Exit P&L:</strong> ₹{(es.fullExitAmount - es.actualFullBuyAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                      </Typography>
-                                    </>
-                                  )}
+                                  {Object.entries(portfolios).map(([acct, es]) => {
+                                    if (es.totalPartialExitAmount === 0 && es.fullExitAmount === 0) return null;
+                                    return (
+                                      <Box key={acct} sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center', mt: 0.5 }}>
+                                        <Chip label={acct === 'primary' ? '🟢 Primary' : '🔵 Secondary'} size="small" variant="outlined" sx={{ fontWeight: 600 }} />
+                                        {es.totalPartialExitAmount > 0 && (
+                                          <>
+                                            <Typography variant="caption">
+                                              <strong>Partial Exit:</strong> ₹{es.totalPartialExitAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                            </Typography>
+                                            <Typography variant="caption">
+                                              <strong>Partial Buy:</strong> ₹{es.totalActualPartialBuyAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                            </Typography>
+                                            <Typography variant="caption" color={es.totalPartialExitAmount - es.totalActualPartialBuyAmount >= 0 ? 'success.main' : 'error.main'}>
+                                              <strong>Partial P&L:</strong> ₹{(es.totalPartialExitAmount - es.totalActualPartialBuyAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                            </Typography>
+                                          </>
+                                        )}
+                                        {es.fullExitAmount > 0 && (
+                                          <>
+                                            <Typography variant="caption">
+                                              <strong>Full Exit:</strong> ₹{es.fullExitAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                            </Typography>
+                                            <Typography variant="caption">
+                                              <strong>Full Buy:</strong> ₹{es.actualFullBuyAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                            </Typography>
+                                            <Typography variant="caption" color={es.fullExitAmount - es.actualFullBuyAmount >= 0 ? 'success.main' : 'error.main'}>
+                                              <strong>Full P&L:</strong> ₹{(es.fullExitAmount - es.actualFullBuyAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                            </Typography>
+                                          </>
+                                        )}
+                                      </Box>
+                                    );
+                                  })}
                                 </Box>
                               );
                             })()}

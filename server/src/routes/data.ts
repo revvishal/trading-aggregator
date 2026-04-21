@@ -241,22 +241,27 @@ router.get('/exit-summary/:ticker', async (req: Request, res: Response) => {
   try {
     const result = await pool.query(
       `SELECT 
+         COALESCE(account_type, 'primary') AS account_type,
          COALESCE(SUM(partial_exit_amount), 0) AS total_partial_exit_amount,
          COALESCE(SUM(actual_partial_buy_amount), 0) AS total_actual_partial_buy_amount,
          COALESCE(MAX(CASE WHEN match_type = 'FULL_EXIT' THEN full_exit_amount ELSE 0 END), 0) AS full_exit_amount,
          COALESCE(MAX(CASE WHEN match_type = 'FULL_EXIT' THEN actual_full_buy_amount ELSE 0 END), 0) AS actual_full_buy_amount
        FROM matched_trades
-       WHERE UPPER(ticker) = $1 AND match_type IN ('PARTIAL_EXIT', 'FULL_EXIT')`,
+       WHERE UPPER(ticker) = $1 AND match_type IN ('PARTIAL_EXIT', 'FULL_EXIT')
+       GROUP BY COALESCE(account_type, 'primary')`,
       [ticker]
     );
-    const row = result.rows[0] || {};
-    res.json({
-      ticker,
-      totalPartialExitAmount: parseFloat(row.total_partial_exit_amount) || 0,
-      totalActualPartialBuyAmount: parseFloat(row.total_actual_partial_buy_amount) || 0,
-      fullExitAmount: parseFloat(row.full_exit_amount) || 0,
-      actualFullBuyAmount: parseFloat(row.actual_full_buy_amount) || 0,
-    });
+    const portfolios: Record<string, any> = {};
+    for (const row of result.rows) {
+      const acct = row.account_type || 'primary';
+      portfolios[acct] = {
+        totalPartialExitAmount: parseFloat(row.total_partial_exit_amount) || 0,
+        totalActualPartialBuyAmount: parseFloat(row.total_actual_partial_buy_amount) || 0,
+        fullExitAmount: parseFloat(row.full_exit_amount) || 0,
+        actualFullBuyAmount: parseFloat(row.actual_full_buy_amount) || 0,
+      };
+    }
+    res.json({ ticker, portfolios });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
