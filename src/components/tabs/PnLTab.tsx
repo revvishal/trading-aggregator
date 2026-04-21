@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Typography,
@@ -109,9 +109,10 @@ export default function PnLTab() {
 
   // Calculate P&L per portfolio
   const recalculate = () => {
-    // Combined (no account filter) — qty/invested from matched trades only
-    const combined = calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings);
-    dispatch({ type: 'SET_PNL_ENTRIES', payload: combined });
+    // Store primary+secondary concatenated as the "combined" entries
+    const primary = calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings, 'primary');
+    const secondary = calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings, 'secondary');
+    dispatch({ type: 'SET_PNL_ENTRIES', payload: [...primary, ...secondary] });
   };
 
   useEffect(() => {
@@ -121,21 +122,12 @@ export default function PnLTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.alerts.length, state.matchedTrades.length, state.zerodhaHoldings.length]);
 
-  // Compute per-portfolio P&L on the fly from state data
-  const primaryEntries = useMemo(
-    () => calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings, 'primary'),
-    [state.alerts, state.matchedTrades, state.zerodhaHoldings]
-  );
-  const secondaryEntries = useMemo(
-    () => calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings, 'secondary'),
-    [state.alerts, state.matchedTrades, state.zerodhaHoldings]
-  );
   const combinedEntries = state.pnlEntries;
 
   // Select active entries based on portfolio toggle
   let baseEntries: PnLEntry[];
-  if (portfolioView === 'primary') baseEntries = primaryEntries;
-  else if (portfolioView === 'secondary') baseEntries = secondaryEntries;
+  if (portfolioView === 'primary') baseEntries = combinedEntries.filter((e) => e.accountType === 'primary');
+  else if (portfolioView === 'secondary') baseEntries = combinedEntries.filter((e) => e.accountType === 'secondary');
   else baseEntries = combinedEntries;
 
   // Apply global ticker filter
@@ -151,8 +143,8 @@ export default function PnLTab() {
   const nonActionedEntries = entries.filter((e) => !e.actioned);
 
   // Summaries
-  const primarySummary = summarise(primaryEntries);
-  const secondarySummary = summarise(secondaryEntries);
+  const primarySummary = summarise(combinedEntries.filter((e) => e.accountType === 'primary'));
+  const secondarySummary = summarise(combinedEntries.filter((e) => e.accountType === 'secondary'));
   const combinedSummary = summarise(
     state.globalTickerFilter
       ? combinedEntries.filter((e) => e.ticker.toUpperCase().includes(state.globalTickerFilter.toUpperCase()))
@@ -343,6 +335,7 @@ export default function PnLTab() {
               <TableHead>
                 <TableRow sx={{ bgcolor: 'grey.100' }}>
                   <TableCell sx={{ fontWeight: 600 }}>Ticker</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Portfolio</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Strategy</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Qty</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Avg Buy</TableCell>
@@ -362,6 +355,14 @@ export default function PnLTab() {
                   return (
                     <TableRow key={i} hover>
                       <TableCell><Typography variant="body2" fontWeight={600}>{entry.ticker}</Typography></TableCell>
+                      <TableCell>
+                        <Chip
+                          label={entry.accountType === 'secondary' ? 'Secondary' : 'Primary'}
+                          color={entry.accountType === 'secondary' ? 'info' : 'success'}
+                          size="small"
+                          variant="outlined"
+                        />
+                      </TableCell>
                       <TableCell><Chip label={entry.strategy || '-'} size="small" variant="outlined" /></TableCell>
                       <TableCell>{entry.quantity}</TableCell>
                       <TableCell>₹{entry.averageBuyPrice.toLocaleString('en-IN')}</TableCell>
