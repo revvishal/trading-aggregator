@@ -46,8 +46,9 @@ export default function MatchedTab() {
   const runMatching = async () => {
     setMatching(true);
     try {
+      const pendingAlerts = state.alerts.filter((a) => a.status === 'PENDING');
       const { newMatches, updatedAlerts } = matchTradesWithAlerts(
-        state.alerts,
+        pendingAlerts,
         state.zerodhaOrders,
         state.zerodhaHoldings,
         state.matchedTrades // pass existing matches so orders aren't re-matched
@@ -59,7 +60,9 @@ export default function MatchedTab() {
         // Update local state: merge new matches with existing
         dispatch({ type: 'SET_MATCHED_TRADES', payload: [...state.matchedTrades, ...newMatches] });
       }
-      dispatch({ type: 'SET_ALERTS', payload: updatedAlerts });
+      // Merge updated pending alerts back with non-pending ones
+      const nonPendingAlerts = state.alerts.filter((a) => a.status !== 'PENDING');
+      dispatch({ type: 'SET_ALERTS', payload: [...nonPendingAlerts, ...updatedAlerts] });
       setLastRun(new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
     } catch (err) {
       console.error('Matching failed:', err);
