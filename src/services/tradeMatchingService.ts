@@ -52,10 +52,10 @@ export function matchTradesWithAlerts(
     });
 
     if (matchingOrders.length > 0) {
-      // Pick the closest order by time (after the alert)
-      const bestOrder = matchingOrders.sort(
+      // Match ALL matching orders for this alert (sorted by time, oldest first)
+      const sortedMatchingOrders = matchingOrders.sort(
         (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-      )[0];
+      );
 
       let matchType: MatchedTrade['matchType'];
       if (alert.OrderType === 'BUY') matchType = 'FULL_ENTRY';
@@ -63,62 +63,63 @@ export function matchTradesWithAlerts(
       else if (alert.OrderType === 'ADD') matchType = 'PARTIAL_ENTRY';
       else matchType = 'PARTIAL_EXIT';
 
-      // Snapshot holding avg buy price at match time (survives full exit when holding disappears)
-      const account = bestOrder.accountType || 'primary';
-      const holding = holdings.find(
-        (h) =>
-          h.ticker.toUpperCase() === alert.Ticker.toUpperCase() &&
-          (!h.accountType || h.accountType === account)
-      );
-
-      const avgBuyPrice = holding ? holding.averagePrice : undefined;
-
-      // Compute exit amounts based on match type
-      let partialExitAmount = 0;
-      let actualPartialBuyAmount = 0;
-      let fullExitAmount = 0;
-      let actualFullBuyAmount = 0;
-
-      if (matchType === 'PARTIAL_EXIT') {
-        // REMOVE: partial exit
-        partialExitAmount = bestOrder.quantity * bestOrder.price;
-        actualPartialBuyAmount = avgBuyPrice ? bestOrder.quantity * avgBuyPrice : 0;
-      } else if (matchType === 'FULL_EXIT') {
-        // SELL: full exit — include sum of previous partial exits for this ticker
-        const previousPartialExits = [...existingMatches, ...newMatches].filter(
-          (m) => m.ticker.toUpperCase() === alert.Ticker.toUpperCase() &&
-                 m.matchType === 'PARTIAL_EXIT' &&
-                 m.accountType === account
+      for (const order of sortedMatchingOrders) {
+        // Snapshot holding avg buy price at match time (survives full exit when holding disappears)
+        const account = order.accountType || 'primary';
+        const holding = holdings.find(
+          (h) =>
+            h.ticker.toUpperCase() === alert.Ticker.toUpperCase() &&
+            (!h.accountType || h.accountType === account)
         );
-        const prevExitSum = previousPartialExits.reduce((sum, m) => sum + (m.partialExitAmount || 0), 0);
-        const prevBuySum = previousPartialExits.reduce((sum, m) => sum + (m.actualPartialBuyAmount || 0), 0);
-        const thisExitAmount = bestOrder.quantity * bestOrder.price;
-        fullExitAmount = prevExitSum + thisExitAmount;
-        actualFullBuyAmount = prevBuySum + (avgBuyPrice ? bestOrder.quantity * avgBuyPrice : 0);
+
+        const avgBuyPrice = holding ? holding.averagePrice : undefined;
+
+        // Compute exit amounts based on match type
+        let partialExitAmount = 0;
+        let actualPartialBuyAmount = 0;
+        let fullExitAmount = 0;
+        let actualFullBuyAmount = 0;
+
+        if (matchType === 'PARTIAL_EXIT') {
+          partialExitAmount = order.quantity * order.price;
+          actualPartialBuyAmount = avgBuyPrice ? order.quantity * avgBuyPrice : 0;
+        } else if (matchType === 'FULL_EXIT') {
+          const previousPartialExits = [...existingMatches, ...newMatches].filter(
+            (m) => m.ticker.toUpperCase() === alert.Ticker.toUpperCase() &&
+                   m.matchType === 'PARTIAL_EXIT' &&
+                   m.accountType === account
+          );
+          const prevExitSum = previousPartialExits.reduce((sum, m) => sum + (m.partialExitAmount || 0), 0);
+          const prevBuySum = previousPartialExits.reduce((sum, m) => sum + (m.actualPartialBuyAmount || 0), 0);
+          const thisExitAmount = order.quantity * order.price;
+          fullExitAmount = prevExitSum + thisExitAmount;
+          actualFullBuyAmount = prevBuySum + (avgBuyPrice ? order.quantity * avgBuyPrice : 0);
+        }
+
+        newMatches.push({
+          id: uuidv4(),
+          alertId: alert.id,
+          zerodhaOrderId: order.id,
+          ticker: alert.Ticker,
+          matchType,
+          direction: alert.OrderType,
+          alertQuantity: alert.Quantity,
+          zerodhaQuantity: order.quantity,
+          zerodhaPrice: order.price,
+          alertClose: alert.Close,
+          timestamp: order.timestamp,
+          status: 'MATCHED',
+          accountType: account,
+          holdingAvgBuyPrice: avgBuyPrice,
+          partialExitAmount,
+          actualPartialBuyAmount,
+          fullExitAmount,
+          actualFullBuyAmount,
+        });
+
+        newlyMatchedOrderIds.add(order.id);
       }
 
-      newMatches.push({
-        id: uuidv4(),
-        alertId: alert.id,
-        zerodhaOrderId: bestOrder.id,
-        ticker: alert.Ticker,
-        matchType,
-        direction: alert.OrderType,
-        alertQuantity: alert.Quantity,
-        zerodhaQuantity: bestOrder.quantity,
-        zerodhaPrice: bestOrder.price,
-        alertClose: alert.Close,
-        timestamp: bestOrder.timestamp,
-        status: 'MATCHED',
-        accountType: account,
-        holdingAvgBuyPrice: avgBuyPrice,
-        partialExitAmount,
-        actualPartialBuyAmount,
-        fullExitAmount,
-        actualFullBuyAmount,
-      });
-
-      newlyMatchedOrderIds.add(bestOrder.id);
       updatedAlerts[alertIdx] = { ...updatedAlerts[alertIdx], status: 'ACTIONED' };
     }
   }

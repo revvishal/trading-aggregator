@@ -71,11 +71,12 @@ export default function MatchedTab() {
     }
   };
 
-  const filteredMatches = state.globalTickerFilter
+  const filteredMatches = (state.globalTickerFilter
     ? state.matchedTrades.filter((m) =>
         m.ticker.toUpperCase().includes(state.globalTickerFilter.toUpperCase())
       )
-    : state.matchedTrades;
+    : state.matchedTrades
+  ).slice().sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
   // Find unmatched alerts
   const matchedAlertIds = new Set(state.matchedTrades.map((m) => m.alertId));
