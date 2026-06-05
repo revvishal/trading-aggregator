@@ -24,12 +24,13 @@ import ScoreBadge from './ScoreBadge';
 import TradingViewFundamentalWidget from '../widgets/TradingViewFundamentalWidget';
 import TradingViewRecommendationWidget from '../widgets/TradingViewRecommendationWidget';
 
+const TRADINGVIEW_EXCHANGE = 'NSE';
+
 interface FinancialCardProps {
   financials?: QuarterlyFinancials | null;
   recommendation?: AnalystRecommendation | null;
   loading?: boolean;
   ticker?: string;
-  exchange?: string;
 }
 
 function TrendIcon({ value }: { value: number }) {
@@ -50,7 +51,7 @@ function ColoredValue({ value, suffix = '' }: { value: number; suffix?: string }
   );
 }
 
-export default function FinancialCard({ financials, recommendation, loading, ticker, exchange = 'NSE' }: FinancialCardProps) {
+export default function FinancialCard({ financials, recommendation, loading, ticker }: FinancialCardProps) {
   const [activeTab, setActiveTab] = useState(0);
 
   if (loading) {
@@ -215,12 +216,12 @@ export default function FinancialCard({ financials, recommendation, loading, tic
 
         {/* Tab 1: TradingView Fundamental Data Widget */}
         {activeTab === 1 && resolvedTicker && (
-          <TradingViewFundamentalWidget ticker={resolvedTicker} exchange={exchange} />
+          <TradingViewFundamentalWidget ticker={resolvedTicker} exchange={TRADINGVIEW_EXCHANGE} />
         )}
 
         {/* Tab 2: TradingView Technical Analysis Widget */}
         {activeTab === 2 && resolvedTicker && (
-          <TradingViewRecommendationWidget ticker={resolvedTicker} exchange={exchange} />
+          <TradingViewRecommendationWidget ticker={resolvedTicker} exchange={TRADINGVIEW_EXCHANGE} />
         )}
       </CardContent>
     </Card>

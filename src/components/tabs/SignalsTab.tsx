@@ -598,7 +598,6 @@ export default function SignalsTab() {
                               recommendation={alert.analystRecommendation}
                               loading={loadingFinancials.has(alert.id)}
                               ticker={alert.Ticker}
-                              exchange={alert.Exchange}
                             />
                           </Box>
                         </Collapse>
