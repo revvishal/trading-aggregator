@@ -80,6 +80,15 @@ export async function initDatabase(): Promise<void> {
         UNIQUE(zerodha_order_id, account_type)
       );
 
+      -- Add holding_avg_buy_price column if not exists
+      ALTER TABLE matched_trades ADD COLUMN IF NOT EXISTS holding_avg_buy_price NUMERIC DEFAULT NULL;
+
+      -- Exit tracking columns
+      ALTER TABLE matched_trades ADD COLUMN IF NOT EXISTS partial_exit_amount NUMERIC DEFAULT 0;
+      ALTER TABLE matched_trades ADD COLUMN IF NOT EXISTS actual_partial_buy_amount NUMERIC DEFAULT 0;
+      ALTER TABLE matched_trades ADD COLUMN IF NOT EXISTS full_exit_amount NUMERIC DEFAULT 0;
+      ALTER TABLE matched_trades ADD COLUMN IF NOT EXISTS actual_full_buy_amount NUMERIC DEFAULT 0;
+
       CREATE TABLE IF NOT EXISTS pnl_entries (
         id SERIAL PRIMARY KEY,
         ticker TEXT NOT NULL,
@@ -116,8 +125,10 @@ export async function initDatabase(): Promise<void> {
 
       CREATE TABLE IF NOT EXISTS ticker_financials (
         ticker TEXT PRIMARY KEY,
+        company TEXT DEFAULT '',
         financials JSONB,
         analyst_recommendation JSONB,
+        summary TEXT DEFAULT '',
         fetched_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
@@ -128,6 +139,8 @@ export async function initDatabase(): Promise<void> {
     await client.query(`ALTER TABLE zerodha_holdings ADD COLUMN IF NOT EXISTS account_type TEXT DEFAULT 'primary'`).catch(() => {});
     await client.query(`ALTER TABLE matched_trades ADD COLUMN IF NOT EXISTS account_type TEXT DEFAULT 'primary'`).catch(() => {});
     await client.query(`ALTER TABLE kite_sessions ADD COLUMN IF NOT EXISTS account_type TEXT DEFAULT 'primary'`).catch(() => {});
+    await client.query(`ALTER TABLE ticker_financials ADD COLUMN IF NOT EXISTS company TEXT DEFAULT ''`).catch(() => {});
+    await client.query(`ALTER TABLE ticker_financials ADD COLUMN IF NOT EXISTS summary TEXT DEFAULT ''`).catch(() => {});
 
     // Seed sync_metadata for both accounts
     await client.query(`INSERT INTO sync_metadata (account_type) VALUES ('primary') ON CONFLICT (account_type) DO NOTHING`).catch(() => {});

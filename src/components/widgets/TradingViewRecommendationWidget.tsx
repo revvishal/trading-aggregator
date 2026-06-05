@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { Box, Typography } from '@mui/material';
 
 interface TradingViewRecommendationWidgetProps {
@@ -7,39 +7,20 @@ interface TradingViewRecommendationWidgetProps {
 }
 
 /**
- * Embeds the TradingView Technical Analysis widget showing analyst recommendations.
+ * Embeds the TradingView Technical Analysis widget via the official widget iframe URL.
  */
 function TradingViewRecommendationWidget({ ticker, exchange = 'NSE' }: TradingViewRecommendationWidgetProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    // Clear previous widget
-    container.innerHTML = '';
-
-    const script = document.createElement('script');
-    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js';
-    script.type = 'text/javascript';
-    script.async = true;
-    script.innerHTML = JSON.stringify({
-      interval: '1W',
-      width: '100%',
-      isTransparent: false,
-      height: 350,
+  const iframeSrc = useMemo(() => {
+    const params = new URLSearchParams({
       symbol: `${exchange}:${ticker}`,
-      showIntervalTabs: true,
-      displayMode: 'single',
-      locale: 'en',
       colorTheme: 'light',
+      isTransparent: 'false',
+      showIntervalTabs: 'true',
+      displayMode: 'single',
+      interval: '1W',
+      locale: 'en',
     });
-
-    container.appendChild(script);
-
-    return () => {
-      container.innerHTML = '';
-    };
+    return `https://www.tradingview-widget.com/embed-widget/technical-analysis/?${params.toString()}`;
   }, [ticker, exchange]);
 
   return (
@@ -48,20 +29,30 @@ function TradingViewRecommendationWidget({ ticker, exchange = 'NSE' }: TradingVi
         TradingView Technical Analysis — {exchange}:{ticker}
       </Typography>
       <Box
-        ref={containerRef}
-        className="tradingview-widget-container"
         sx={{
           border: '1px solid',
           borderColor: 'grey.200',
           borderRadius: 1,
           overflow: 'hidden',
-          minHeight: 350,
         }}
-      />
+      >
+        <iframe
+          key={`technical-${exchange}-${ticker}`}
+          src={iframeSrc}
+          title={`TradingView Technical Analysis ${exchange}:${ticker}`}
+          style={{
+            width: '100%',
+            height: 425,
+            border: 'none',
+            display: 'block',
+          }}
+          allowTransparency
+          frameBorder={0}
+          loading="lazy"
+        />
+      </Box>
     </Box>
   );
 }
 
 export default memo(TradingViewRecommendationWidget);
-
-

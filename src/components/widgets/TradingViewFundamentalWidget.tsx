@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { Box, Typography } from '@mui/material';
 
 interface TradingViewFundamentalWidgetProps {
@@ -7,39 +7,18 @@ interface TradingViewFundamentalWidgetProps {
 }
 
 /**
- * Embeds the TradingView Fundamental Data widget.
- * Shows company financial overview including revenue, EPS, margins etc.
+ * Embeds the TradingView Fundamental Data widget via the official widget iframe URL.
  */
 function TradingViewFundamentalWidget({ ticker, exchange = 'NSE' }: TradingViewFundamentalWidgetProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    // Clear previous widget
-    container.innerHTML = '';
-
-    const script = document.createElement('script');
-    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-financials.js';
-    script.type = 'text/javascript';
-    script.async = true;
-    script.innerHTML = JSON.stringify({
-      isTransparent: false,
-      largeChartUrl: '',
-      displayMode: 'regular',
-      width: '100%',
-      height: 400,
-      colorTheme: 'light',
+  const iframeSrc = useMemo(() => {
+    const params = new URLSearchParams({
       symbol: `${exchange}:${ticker}`,
+      colorTheme: 'light',
+      isTransparent: 'false',
+      displayMode: 'regular',
       locale: 'en',
     });
-
-    container.appendChild(script);
-
-    return () => {
-      container.innerHTML = '';
-    };
+    return `https://www.tradingview-widget.com/embed-widget/financials/?${params.toString()}`;
   }, [ticker, exchange]);
 
   return (
@@ -48,20 +27,30 @@ function TradingViewFundamentalWidget({ ticker, exchange = 'NSE' }: TradingViewF
         TradingView Fundamentals — {exchange}:{ticker}
       </Typography>
       <Box
-        ref={containerRef}
-        className="tradingview-widget-container"
         sx={{
           border: '1px solid',
           borderColor: 'grey.200',
           borderRadius: 1,
           overflow: 'hidden',
-          minHeight: 400,
         }}
-      />
+      >
+        <iframe
+          key={`fundamental-${exchange}-${ticker}`}
+          src={iframeSrc}
+          title={`TradingView Fundamentals ${exchange}:${ticker}`}
+          style={{
+            width: '100%',
+            height: 490,
+            border: 'none',
+            display: 'block',
+          }}
+          allowTransparency
+          frameBorder={0}
+          loading="lazy"
+        />
+      </Box>
     </Box>
   );
 }
 
 export default memo(TradingViewFundamentalWidget);
-
-

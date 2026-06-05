@@ -28,7 +28,9 @@ export interface QuarterlyResult {
 
 export interface QuarterlyFinancials {
   ticker: string;
+  company?: string;
   quarters: QuarterlyResult[];
+  summary?: string;
   fetchedAt: string;
 }
 
@@ -87,6 +89,11 @@ export interface MatchedTrade {
   alertClose: number;
   timestamp: string;
   pnl?: number;
+  holdingAvgBuyPrice?: number;
+  partialExitAmount?: number;
+  actualPartialBuyAmount?: number;
+  fullExitAmount?: number;
+  actualFullBuyAmount?: number;
   status: 'MATCHED' | 'PARTIAL' | 'UNMATCHED';
   accountType?: string;
 }
@@ -103,6 +110,7 @@ export interface PnLEntry {
   lastPrice: number;
   actioned: boolean;
   trades: number;
+  accountType?: string;
 }
 
 export interface AppState {

@@ -52,10 +52,10 @@ export function matchTradesWithAlerts(
     });
 
     if (matchingOrders.length > 0) {
-      // Pick the closest order by time (after the alert)
-      const bestOrder = matchingOrders.sort(
+      // Match ALL matching orders for this alert (sorted by time, oldest first)
+      const sortedMatchingOrders = matchingOrders.sort(
         (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-      )[0];
+      );
 
       let matchType: MatchedTrade['matchType'];
       if (alert.OrderType === 'BUY') matchType = 'FULL_ENTRY';
@@ -63,23 +63,63 @@ export function matchTradesWithAlerts(
       else if (alert.OrderType === 'ADD') matchType = 'PARTIAL_ENTRY';
       else matchType = 'PARTIAL_EXIT';
 
-      newMatches.push({
-        id: uuidv4(),
-        alertId: alert.id,
-        zerodhaOrderId: bestOrder.id,
-        ticker: alert.Ticker,
-        matchType,
-        direction: alert.OrderType,
-        alertQuantity: alert.Quantity,
-        zerodhaQuantity: bestOrder.quantity,
-        zerodhaPrice: bestOrder.price,
-        alertClose: alert.Close,
-        timestamp: bestOrder.timestamp,
-        status: 'MATCHED',
-        accountType: bestOrder.accountType || 'primary',
-      });
+      for (const order of sortedMatchingOrders) {
+        // Snapshot holding avg buy price at match time (survives full exit when holding disappears)
+        const account = order.accountType || 'primary';
+        const holding = holdings.find(
+          (h) =>
+            h.ticker.toUpperCase() === alert.Ticker.toUpperCase() &&
+            (!h.accountType || h.accountType === account)
+        );
 
-      newlyMatchedOrderIds.add(bestOrder.id);
+        const avgBuyPrice = holding ? holding.averagePrice : undefined;
+
+        // Compute exit amounts based on match type
+        let partialExitAmount = 0;
+        let actualPartialBuyAmount = 0;
+        let fullExitAmount = 0;
+        let actualFullBuyAmount = 0;
+
+        if (matchType === 'PARTIAL_EXIT') {
+          partialExitAmount = order.quantity * order.price;
+          actualPartialBuyAmount = avgBuyPrice ? order.quantity * avgBuyPrice : 0;
+        } else if (matchType === 'FULL_EXIT') {
+          const previousPartialExits = [...existingMatches, ...newMatches].filter(
+            (m) => m.ticker.toUpperCase() === alert.Ticker.toUpperCase() &&
+                   m.matchType === 'PARTIAL_EXIT' &&
+                   m.accountType === account
+          );
+          const prevExitSum = previousPartialExits.reduce((sum, m) => sum + (m.partialExitAmount || 0), 0);
+          const prevBuySum = previousPartialExits.reduce((sum, m) => sum + (m.actualPartialBuyAmount || 0), 0);
+          const thisExitAmount = order.quantity * order.price;
+          fullExitAmount = prevExitSum + thisExitAmount;
+          actualFullBuyAmount = prevBuySum + (avgBuyPrice ? order.quantity * avgBuyPrice : 0);
+        }
+
+        newMatches.push({
+          id: uuidv4(),
+          alertId: alert.id,
+          zerodhaOrderId: order.id,
+          ticker: alert.Ticker,
+          matchType,
+          direction: alert.OrderType,
+          alertQuantity: alert.Quantity,
+          zerodhaQuantity: order.quantity,
+          zerodhaPrice: order.price,
+          alertClose: alert.Close,
+          timestamp: order.timestamp,
+          status: 'MATCHED',
+          accountType: account,
+          holdingAvgBuyPrice: avgBuyPrice,
+          partialExitAmount,
+          actualPartialBuyAmount,
+          fullExitAmount,
+          actualFullBuyAmount,
+        });
+
+        newlyMatchedOrderIds.add(order.id);
+      }
+
       updatedAlerts[alertIdx] = { ...updatedAlerts[alertIdx], status: 'ACTIONED' };
     }
   }
@@ -90,46 +130,81 @@ export function matchTradesWithAlerts(
 export function calculatePnL(
   alerts: TradingViewAlert[],
   matchedTrades: MatchedTrade[],
-  holdings: ZerodhaHolding[]
+  holdings: ZerodhaHolding[],
+  accountType?: string
 ): PnLEntry[] {
+  // Filter matched trades and holdings by account if specified
+  const filteredTrades = accountType
+    ? matchedTrades.filter((m) => m.accountType === accountType)
+    : matchedTrades;
+  const filteredHoldings = accountType
+    ? holdings.filter((h) => !h.accountType || h.accountType === accountType)
+    : holdings;
+
   const pnlMap = new Map<string, PnLEntry>();
-  const matchedAlertIds = new Set(matchedTrades.map((m) => m.alertId));
+  const matchedAlertIds = new Set(filteredTrades.map((m) => m.alertId));
 
   for (const alert of alerts) {
     const key = `${alert.Ticker}_${alert.Strategy}`;
     const isActioned = matchedAlertIds.has(alert.id);
 
     if (!pnlMap.has(key)) {
-      const holding = holdings.find((h) => h.ticker.toUpperCase() === alert.Ticker.toUpperCase());
+      const holding = filteredHoldings.find((h) => h.ticker.toUpperCase() === alert.Ticker.toUpperCase());
       pnlMap.set(key, {
         ticker: alert.Ticker,
         strategy: alert.Strategy,
         realisedPnl: 0,
         unrealisedPnl: holding ? holding.pnl : 0,
         totalInvested: 0,
-        currentValue: holding ? holding.lastPrice * holding.quantity : 0,
-        quantity: holding ? holding.quantity : 0,
-        averageBuyPrice: holding ? holding.averagePrice : 0,
+        currentValue: 0,
+        quantity: 0,
+        averageBuyPrice: 0,
         lastPrice: holding ? holding.lastPrice : alert.Close,
         actioned: isActioned,
         trades: 0,
+        accountType: accountType || 'combined',
       });
     }
 
     const entry = pnlMap.get(key)!;
 
-    const matchedTradesForAlert = matchedTrades.filter((m) => m.alertId === alert.id);
+    const matchedTradesForAlert = filteredTrades.filter((m) => m.alertId === alert.id);
     if (matchedTradesForAlert.length > 0) {
       entry.actioned = true;
-      for (const matchedTrade of matchedTradesForAlert) {
+      for (const mt of matchedTradesForAlert) {
         entry.trades++;
-        if (matchedTrade.matchType === 'FULL_EXIT' || matchedTrade.matchType === 'PARTIAL_EXIT') {
-          const buyPrice = entry.averageBuyPrice || matchedTrade.alertClose;
-          entry.realisedPnl += (matchedTrade.zerodhaPrice - buyPrice) * matchedTrade.zerodhaQuantity;
+        if (mt.matchType === 'FULL_ENTRY' || mt.matchType === 'PARTIAL_ENTRY') {
+          // BUY/ADD: accumulate qty and invested from matched trade
+          entry.quantity += mt.zerodhaQuantity;
+          entry.totalInvested += mt.zerodhaPrice * mt.zerodhaQuantity;
         } else {
-          entry.totalInvested += matchedTrade.zerodhaPrice * matchedTrade.zerodhaQuantity;
+          // SELL/REMOVE: use persisted holding avg buy price, fall back to live holding, then matched-trade avg
+          const buyPrice = mt.holdingAvgBuyPrice
+            ? mt.holdingAvgBuyPrice
+            : (() => {
+                const holding = filteredHoldings.find(
+                  (h) =>
+                    h.ticker.toUpperCase() === mt.ticker.toUpperCase() &&
+                    (!mt.accountType || !h.accountType || h.accountType === mt.accountType)
+                );
+                return holding
+                  ? holding.averagePrice
+                  : entry.quantity > 0
+                    ? entry.totalInvested / entry.quantity
+                    : mt.alertClose;
+              })();
+          entry.realisedPnl += (mt.zerodhaPrice - buyPrice) * mt.zerodhaQuantity;
+          // Reduce qty and invested proportionally
+          const soldQty = Math.min(mt.zerodhaQuantity, entry.quantity);
+          if (entry.quantity > 0) {
+            const avgCost = entry.totalInvested / entry.quantity;
+            entry.totalInvested -= avgCost * soldQty;
+          }
+          entry.quantity -= soldQty;
         }
       }
+      // Recompute avg buy price after processing all matched trades for this alert
+      entry.averageBuyPrice = entry.quantity > 0 ? entry.totalInvested / entry.quantity : 0;
     } else {
       entry.trades++;
     }
@@ -137,19 +212,20 @@ export function calculatePnL(
     pnlMap.set(key, entry);
   }
 
-  for (const holding of holdings) {
+  // Update lastPrice and unrealisedPnl from holdings (source of truth for live prices)
+  for (const holding of filteredHoldings) {
     const existingKeys = Array.from(pnlMap.keys()).filter((k) => k.startsWith(holding.ticker.toUpperCase()));
-    if (existingKeys.length > 0) {
-      for (const key of existingKeys) {
-        const entry = pnlMap.get(key)!;
-        entry.unrealisedPnl = holding.pnl;
-        entry.currentValue = holding.lastPrice * holding.quantity;
-        entry.quantity = holding.quantity;
-        entry.averageBuyPrice = holding.averagePrice;
-        entry.lastPrice = holding.lastPrice;
-      }
+    for (const key of existingKeys) {
+      const entry = pnlMap.get(key)!;
+      entry.lastPrice = holding.lastPrice;
+      entry.unrealisedPnl = holding.pnl;
     }
   }
+
+  // Compute currentValue from matched qty * lastPrice
+  Array.from(pnlMap.values()).forEach((entry) => {
+    entry.currentValue = entry.quantity * entry.lastPrice;
+  });
 
   return Array.from(pnlMap.values());
 }

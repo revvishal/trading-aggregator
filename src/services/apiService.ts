@@ -175,6 +175,19 @@ export async function clearAllData(): Promise<void> {
   await handleResponse(res);
 }
 
+export async function fetchExitSummary(ticker: string): Promise<{
+  ticker: string;
+  portfolios: Record<string, {
+    totalPartialExitAmount: number;
+    totalActualPartialBuyAmount: number;
+    fullExitAmount: number;
+    actualFullBuyAmount: number;
+  }>;
+}> {
+  const res = await fetch(`${API_BASE}/api/data/exit-summary/${encodeURIComponent(ticker)}`, { headers: authHeaders() });
+  return handleResponse(res);
+}
+
 // Sync metadata
 export async function fetchSyncMeta(account: string = 'primary'): Promise<{ lastOrderSyncDate: string | null; updatedAt: string | null }> {
   const res = await fetch(`${API_BASE}/api/zerodha/sync-meta?account=${account}`, { headers: authHeaders() });
@@ -203,6 +216,15 @@ export async function saveTickerFinancials(ticker: string, financials: any, anal
     body: JSON.stringify({ financials, analystRecommendation }),
   });
   await handleResponse(res);
+}
+
+export async function uploadFinancialsCSV(csv: string): Promise<{ success: boolean; count: number; tickers: string[] }> {
+  const res = await fetch(`${API_BASE}/api/financials/upload-csv`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ csv }),
+  });
+  return handleResponse(res);
 }
 
 // ==========================================
