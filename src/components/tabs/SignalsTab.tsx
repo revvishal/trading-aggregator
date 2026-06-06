@@ -102,7 +102,7 @@ export default function SignalsTab() {
   const [csvResult, setCsvResult] = useState<string | null>(null);
   const [exitSummaries, setExitSummaries] = useState<Record<string, Record<string, { totalPartialExitAmount: number; totalActualPartialBuyAmount: number; fullExitAmount: number; actualFullBuyAmount: number }>>>({});
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(20);
+  const [rowsPerPage, setRowsPerPage] = useState(() => Number(sessionStorage.getItem('signals_perPage')) || 20);
   const [displayAlerts, setDisplayAlerts] = useState<TradingViewAlert[]>([]);
   const [totalDbCount, setTotalDbCount] = useState(0);
   const [pageLoading, setPageLoading] = useState(false);
@@ -240,7 +240,9 @@ export default function SignalsTab() {
   const totalPages = Math.ceil(totalFilteredCount / rowsPerPage);
 
   const handleRowsPerPageChange = (event: SelectChangeEvent<number>) => {
-    setRowsPerPage(Number(event.target.value));
+    const val = Number(event.target.value);
+    setRowsPerPage(val);
+    sessionStorage.setItem('signals_perPage', String(val));
     setPage(0);
   };
 
