@@ -185,11 +185,30 @@ router.put('/holdings', async (req: Request, res: Response) => {
 // MATCHED TRADES — append-only, never delete matched
 // ==========================================
 
-router.get('/matched-trades', async (_req: Request, res: Response) => {
+router.get('/matched-trades', async (req: Request, res: Response) => {
   try {
-    const result = await pool.query('SELECT * FROM matched_trades ORDER BY timestamp DESC');
-    const trades = result.rows.map(rowToMatchedTrade);
-    res.json(trades);
+    const pageParam = req.query.page as string | undefined;
+    const limitParam = req.query.limit as string | undefined;
+
+    if (pageParam !== undefined && limitParam !== undefined) {
+      const page = Math.max(0, parseInt(pageParam) || 0);
+      const limit = Math.min(Math.max(1, parseInt(limitParam) || 20), 500);
+      const offset = page * limit;
+
+      const countResult = await pool.query('SELECT COUNT(*) FROM matched_trades');
+      const total = parseInt(countResult.rows[0].count);
+
+      const result = await pool.query(
+        'SELECT * FROM matched_trades ORDER BY timestamp DESC LIMIT $1 OFFSET $2',
+        [limit, offset]
+      );
+      const trades = result.rows.map(rowToMatchedTrade);
+      res.json({ trades, total, page, limit });
+    } else {
+      const result = await pool.query('SELECT * FROM matched_trades ORDER BY timestamp DESC');
+      const trades = result.rows.map(rowToMatchedTrade);
+      res.json(trades);
+    }
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

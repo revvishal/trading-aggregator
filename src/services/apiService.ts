@@ -157,6 +157,12 @@ export async function fetchMatchedTrades(): Promise<any[]> {
   return handleResponse(res);
 }
 
+export async function fetchMatchedTradesPaginated(page: number, limit: number): Promise<{ trades: any[]; total: number; page: number; limit: number }> {
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  const res = await fetch(`${API_BASE}/api/data/matched-trades?${params}`, { headers: authHeaders() });
+  return handleResponse(res);
+}
+
 export async function saveMatchedTrades(trades: any[]): Promise<void> {
   const res = await fetch(`${API_BASE}/api/data/matched-trades`, {
     method: 'PUT', headers: authHeaders(), body: JSON.stringify(trades),
