@@ -68,15 +68,44 @@ router.put('/alerts', async (req: Request, res: Response) => {
 
 router.get('/orders', async (req: Request, res: Response) => {
   const account = (req.query.account as string) || null;
+  const pageParam = req.query.page as string | undefined;
+  const limitParam = req.query.limit as string | undefined;
+
   try {
-    let result;
-    if (account) {
-      result = await pool.query('SELECT * FROM zerodha_orders WHERE account_type = $1 ORDER BY timestamp DESC', [account]);
+    // If pagination params provided, return paginated response with total count
+    if (pageParam !== undefined && limitParam !== undefined) {
+      const page = Math.max(0, parseInt(pageParam) || 0);
+      const limit = Math.min(Math.max(1, parseInt(limitParam) || 20), 500);
+      const offset = page * limit;
+
+      let countResult, result;
+      if (account) {
+        countResult = await pool.query('SELECT COUNT(*) FROM zerodha_orders WHERE account_type = $1', [account]);
+        result = await pool.query(
+          'SELECT * FROM zerodha_orders WHERE account_type = $1 ORDER BY timestamp DESC LIMIT $2 OFFSET $3',
+          [account, limit, offset]
+        );
+      } else {
+        countResult = await pool.query('SELECT COUNT(*) FROM zerodha_orders');
+        result = await pool.query(
+          'SELECT * FROM zerodha_orders ORDER BY timestamp DESC LIMIT $1 OFFSET $2',
+          [limit, offset]
+        );
+      }
+      const total = parseInt(countResult.rows[0].count);
+      const orders = result.rows.map(rowToOrder);
+      res.json({ orders, total, page, limit });
     } else {
-      result = await pool.query('SELECT * FROM zerodha_orders ORDER BY timestamp DESC');
+      // Backward-compatible: return all orders as flat array
+      let result;
+      if (account) {
+        result = await pool.query('SELECT * FROM zerodha_orders WHERE account_type = $1 ORDER BY timestamp DESC', [account]);
+      } else {
+        result = await pool.query('SELECT * FROM zerodha_orders ORDER BY timestamp DESC');
+      }
+      const orders = result.rows.map(rowToOrder);
+      res.json(orders);
     }
-    const orders = result.rows.map(rowToOrder);
-    res.json(orders);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

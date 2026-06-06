@@ -123,6 +123,13 @@ export async function fetchOrders(account?: string): Promise<any[]> {
   return handleResponse(res);
 }
 
+export async function fetchOrdersPaginated(page: number, limit: number, account?: string): Promise<{ orders: any[]; total: number; page: number; limit: number }> {
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (account) params.set('account', account);
+  const res = await fetch(`${API_BASE}/api/data/orders?${params}`, { headers: authHeaders() });
+  return handleResponse(res);
+}
+
 export async function saveOrders(orders: any[], account?: string): Promise<void> {
   const params = account ? `?account=${account}` : '';
   const res = await fetch(`${API_BASE}/api/data/orders${params}`, {
