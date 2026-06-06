@@ -27,7 +27,14 @@ import {
   DialogContent,
   DialogActions,
   TextField,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  SelectChangeEvent,
 } from '@mui/material';
+import NavigateBeforeIcon from '@mui/icons-material/NavigateBefore';
+import NavigateNextIcon from '@mui/icons-material/NavigateNext';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -43,7 +50,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useAppContext } from '../../context/AppContext';
 import { TradingViewAlert } from '../../types';
 import { getFinancialData, getAnalystRecommendation } from '../../services/financialService';
-import { fetchWebhookAlerts, fetchWebhookAlertCount, checkServerHealth, uploadFinancialsCSV, fetchExitSummary } from '../../services/apiService';
+import { fetchWebhookAlerts, fetchWebhookAlertCount, checkServerHealth, uploadFinancialsCSV, fetchExitSummary, fetchAlertsPaginated } from '../../services/apiService';
 import JsonInputModal from '../common/JsonInputModal';
 import FinancialCard from '../common/FinancialCard';
 
@@ -94,6 +101,11 @@ export default function SignalsTab() {
   const [csvUploading, setCsvUploading] = useState(false);
   const [csvResult, setCsvResult] = useState<string | null>(null);
   const [exitSummaries, setExitSummaries] = useState<Record<string, Record<string, { totalPartialExitAmount: number; totalActualPartialBuyAmount: number; fullExitAmount: number; actualFullBuyAmount: number }>>>({});
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(20);
+  const [displayAlerts, setDisplayAlerts] = useState<TradingViewAlert[]>([]);
+  const [totalDbCount, setTotalDbCount] = useState(0);
+  const [pageLoading, setPageLoading] = useState(false);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const lastFetchRef = useRef<string>(new Date().toISOString());
 
@@ -172,11 +184,65 @@ export default function SignalsTab() {
     }
   };
 
-  const filteredAlerts = state.globalTickerFilter
+  const isSearchActive = !!state.globalTickerFilter;
+
+  // --- Server-side pagination: fetch page from DB when no search is active ---
+  useEffect(() => {
+    if (isSearchActive) return; // search mode uses client-side data
+    let cancelled = false;
+    const loadPage = async () => {
+      setPageLoading(true);
+      try {
+        const data = await fetchAlertsPaginated(page, rowsPerPage);
+        if (!cancelled) {
+          setDisplayAlerts(data.alerts);
+          setTotalDbCount(data.total);
+        }
+      } catch (err) {
+        console.error('Failed to fetch paginated alerts:', err);
+      } finally {
+        if (!cancelled) setPageLoading(false);
+      }
+    };
+    loadPage();
+    return () => { cancelled = true; };
+  }, [page, rowsPerPage, isSearchActive, state.alerts.length]); // re-fetch when alerts change (add/delete)
+
+  // --- Client-side search: filter from full in-memory state.alerts ---
+  const filteredAlerts = isSearchActive
     ? state.alerts.filter((a) =>
         a.Ticker.toUpperCase().includes(state.globalTickerFilter.toUpperCase())
       )
-    : state.alerts;
+    : [];
+
+  // Reset page when filter changes
+  useEffect(() => {
+    setPage(0);
+  }, [state.globalTickerFilter]);
+
+  // Determine what to show in the table
+  let tableAlerts: TradingViewAlert[];
+  let totalFilteredCount: number;
+
+  if (isSearchActive) {
+    // Client-side: sort + paginate the filtered results
+    const sorted = [...filteredAlerts].sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+    totalFilteredCount = sorted.length;
+    tableAlerts = sorted.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+  } else {
+    // Server-side: displayAlerts is already the current page from DB
+    totalFilteredCount = totalDbCount;
+    tableAlerts = displayAlerts;
+  }
+
+  const totalPages = Math.ceil(totalFilteredCount / rowsPerPage);
+
+  const handleRowsPerPageChange = (event: SelectChangeEvent<number>) => {
+    setRowsPerPage(Number(event.target.value));
+    setPage(0);
+  };
 
   const fetchFinancials = useCallback(async (alert: TradingViewAlert) => {
     setLoadingFinancials((prev) => new Set(prev).add(alert.id));
@@ -262,7 +328,7 @@ export default function SignalsTab() {
       } else {
         next.add(id);
         // Auto-fetch financials if not already loaded
-        const alert = state.alerts.find((a) => a.id === id);
+        const alert = tableAlerts.find((a) => a.id === id) || state.alerts.find((a) => a.id === id);
         if (alert && !alert.financials && !loadingFinancials.has(id)) {
           fetchFinancials(alert);
         }
@@ -397,12 +463,20 @@ export default function SignalsTab() {
         </Box>
       </Box>
 
-      {filteredAlerts.length === 0 ? (
+      {totalFilteredCount === 0 && !pageLoading ? (
         <Alert severity="info" sx={{ mt: 2 }}>
-          No signals yet. Configure TradingView to POST alerts to <strong>/api/webhook</strong>, then click "Sync Webhook" — or use "Manual Input" to paste JSON directly.
+          {isSearchActive
+            ? `No signals found matching "${state.globalTickerFilter}".`
+            : 'No signals yet. Configure TradingView to POST alerts to /api/webhook, then click "Sync Webhook" — or use "Manual Input" to paste JSON directly.'}
         </Alert>
       ) : (
-        <TableContainer component={Paper} variant="outlined">
+        <>
+        {pageLoading && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+            <CircularProgress size={24} />
+          </Box>
+        )}
+        <TableContainer component={Paper} variant="outlined" sx={{ opacity: pageLoading ? 0.5 : 1 }}>
           <Table size="small">
             <TableHead>
               <TableRow sx={{ bgcolor: 'grey.100' }}>
@@ -419,8 +493,7 @@ export default function SignalsTab() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {filteredAlerts
-                .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+              {tableAlerts
                 .map((alert) => (
                   <React.Fragment key={alert.id}>
                     <TableRow
@@ -608,6 +681,53 @@ export default function SignalsTab() {
             </TableBody>
           </Table>
         </TableContainer>
+
+        {/* Pagination Controls */}
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 2, flexWrap: 'wrap', gap: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <FormControl size="small" sx={{ minWidth: 130 }}>
+              <InputLabel id="rows-per-page-label">Per Page</InputLabel>
+              <Select
+                labelId="rows-per-page-label"
+                value={rowsPerPage}
+                label="Per Page"
+                onChange={handleRowsPerPageChange}
+              >
+                <MenuItem value={20}>20</MenuItem>
+                <MenuItem value={50}>50</MenuItem>
+                <MenuItem value={100}>100</MenuItem>
+                <MenuItem value={200}>200</MenuItem>
+              </Select>
+            </FormControl>
+            <Typography variant="body2" color="text.secondary">
+              Showing {totalFilteredCount === 0 ? 0 : page * rowsPerPage + 1}–{Math.min((page + 1) * rowsPerPage, totalFilteredCount)} of {totalFilteredCount} signals
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<NavigateBeforeIcon />}
+              onClick={() => setPage((p: number) => Math.max(0, p - 1))}
+              disabled={page === 0}
+            >
+              Prev
+            </Button>
+            <Typography variant="body2" fontWeight={600}>
+              Page {totalPages === 0 ? 0 : page + 1} of {totalPages}
+            </Typography>
+            <Button
+              size="small"
+              variant="outlined"
+              endIcon={<NavigateNextIcon />}
+              onClick={() => setPage((p: number) => Math.min(totalPages - 1, p + 1))}
+              disabled={page >= totalPages - 1}
+            >
+              Next
+            </Button>
+          </Box>
+        </Box>
+        </>
       )}
 
       <JsonInputModal

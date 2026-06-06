@@ -104,6 +104,12 @@ export async function fetchAlerts(): Promise<any[]> {
   return handleResponse(res);
 }
 
+export async function fetchAlertsPaginated(page: number, limit: number): Promise<{ alerts: any[]; total: number; page: number; limit: number }> {
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  const res = await fetch(`${API_BASE}/api/data/alerts?${params}`, { headers: authHeaders() });
+  return handleResponse(res);
+}
+
 export async function saveAlerts(alerts: any[]): Promise<void> {
   const res = await fetch(`${API_BASE}/api/data/alerts`, {
     method: 'PUT', headers: authHeaders(), body: JSON.stringify(alerts),

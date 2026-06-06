@@ -7,11 +7,32 @@ const router: ReturnType<typeof Router> = Router();
 // ALERTS — full CRUD
 // ==========================================
 
-router.get('/alerts', async (_req: Request, res: Response) => {
+router.get('/alerts', async (req: Request, res: Response) => {
   try {
-    const result = await pool.query("SELECT * FROM alerts ORDER BY timestamp DESC");
-    const alerts = result.rows.map(rowToAlert);
-    res.json(alerts);
+    const pageParam = req.query.page as string | undefined;
+    const limitParam = req.query.limit as string | undefined;
+
+    // If pagination params provided, return paginated response with total count
+    if (pageParam !== undefined && limitParam !== undefined) {
+      const page = Math.max(0, parseInt(pageParam) || 0);
+      const limit = Math.min(Math.max(1, parseInt(limitParam) || 20), 500);
+      const offset = page * limit;
+
+      const countResult = await pool.query('SELECT COUNT(*) FROM alerts');
+      const total = parseInt(countResult.rows[0].count);
+
+      const result = await pool.query(
+        'SELECT * FROM alerts ORDER BY timestamp DESC LIMIT $1 OFFSET $2',
+        [limit, offset]
+      );
+      const alerts = result.rows.map(rowToAlert);
+      res.json({ alerts, total, page, limit });
+    } else {
+      // Backward-compatible: return all alerts as flat array
+      const result = await pool.query("SELECT * FROM alerts ORDER BY timestamp DESC");
+      const alerts = result.rows.map(rowToAlert);
+      res.json(alerts);
+    }
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
