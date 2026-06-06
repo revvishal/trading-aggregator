@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Box,
   Typography,
@@ -119,7 +119,7 @@ export default function PnLTab() {
   const [dateRangeMatches, setDateRangeMatches] = useState<MatchedTrade[]>([]);
   const [dateRangeLoading, setDateRangeLoading] = useState(false);
 
-  // Fetch matched trades from DB by date range
+  // Fetch matched trades from DB by date range (used only as display filter)
   const loadDateRangeMatches = useCallback(async () => {
     setDateRangeLoading(true);
     try {
@@ -138,30 +138,25 @@ export default function PnLTab() {
     loadDateRangeMatches();
   }, [loadDateRangeMatches]);
 
-  // Calculate P&L using date-range filtered matched trades
+  // Calculate P&L using ALL matched trades (full correct computation)
   const recalculate = useCallback(() => {
-    const primary = calculatePnL(state.alerts, dateRangeMatches, state.zerodhaHoldings, 'primary');
-    const secondary = calculatePnL(state.alerts, dateRangeMatches, state.zerodhaHoldings, 'secondary');
-
-    // Fix actioned status: use ALL matched trades (not just date-range filtered)
-    const allMatchedAlertIds = new Set(state.matchedTrades.map((m) => m.alertId));
-    const fixedEntries = [...primary, ...secondary].map((entry) => ({
-      ...entry,
-      actioned: state.alerts.some(
-        (a) => a.Ticker === entry.ticker && a.Strategy === entry.strategy && allMatchedAlertIds.has(a.id)
-      ),
-    }));
-
-    dispatch({ type: 'SET_PNL_ENTRIES', payload: fixedEntries });
-  }, [state.alerts, state.matchedTrades, dateRangeMatches, state.zerodhaHoldings, dispatch]);
+    const primary = calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings, 'primary');
+    const secondary = calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings, 'secondary');
+    dispatch({ type: 'SET_PNL_ENTRIES', payload: [...primary, ...secondary] });
+  }, [state.alerts, state.matchedTrades, state.zerodhaHoldings, dispatch]);
 
   useEffect(() => {
-    if (state.alerts.length > 0 || dateRangeMatches.length > 0) {
+    if (state.alerts.length > 0 || state.matchedTrades.length > 0) {
       recalculate();
     }
-  }, [state.alerts.length, dateRangeMatches.length, state.zerodhaHoldings.length, recalculate]);
+  }, [state.alerts.length, state.matchedTrades.length, state.zerodhaHoldings.length, recalculate]);
 
   const combinedEntries = state.pnlEntries;
+
+  // Build a set of tickers that had matched trade activity in the date range
+  const dateRangeTickerSet = useMemo(() => {
+    return new Set(dateRangeMatches.map((t) => t.ticker.toUpperCase()));
+  }, [dateRangeMatches]);
 
   // Select active entries based on portfolio toggle
   let baseEntries: PnLEntry[];
@@ -181,7 +176,7 @@ export default function PnLTab() {
   const actionedEntries = entries.filter((e) => e.actioned);
   const nonActionedEntries = entries.filter((e) => !e.actioned);
 
-  // Summaries
+  // Summaries — always use full entries (not date-filtered)
   const primarySummary = summarise(combinedEntries.filter((e) => e.accountType === 'primary'));
   const secondarySummary = summarise(combinedEntries.filter((e) => e.accountType === 'secondary'));
   const combinedSummary = summarise(
@@ -191,7 +186,7 @@ export default function PnLTab() {
   );
   const activeSummary = summarise(entries);
 
-  // Chart data
+  // Chart data — uses entries (full data, respects portfolio/actioned/ticker filters)
   const chartData = entries.map((e) => ({
     ticker: e.ticker,
     realised: e.realisedPnl,
@@ -213,6 +208,12 @@ export default function PnLTab() {
     { name: 'Actioned', value: actionedEntries.length, fill: '#4caf50' },
     { name: 'Non-Actioned', value: nonActionedEntries.length, fill: '#ff9800' },
   ].filter((d) => d.value > 0);
+
+  // Detailed P&L entries — filtered by date range (only tickers with activity in range)
+  const detailedEntries = useMemo(() => {
+    if (dateRangeTickerSet.size === 0) return entries;
+    return entries.filter((e) => dateRangeTickerSet.has(e.ticker.toUpperCase()));
+  }, [entries, dateRangeTickerSet]);
 
   return (
     <Box>
@@ -414,7 +415,7 @@ export default function PnLTab() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {entries.map((entry, i) => {
+                {detailedEntries.map((entry, i) => {
                   const total = entry.realisedPnl + entry.unrealisedPnl;
                   return (
                     <TableRow key={i} hover>
