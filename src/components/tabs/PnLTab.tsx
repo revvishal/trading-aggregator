@@ -142,8 +142,18 @@ export default function PnLTab() {
   const recalculate = useCallback(() => {
     const primary = calculatePnL(state.alerts, dateRangeMatches, state.zerodhaHoldings, 'primary');
     const secondary = calculatePnL(state.alerts, dateRangeMatches, state.zerodhaHoldings, 'secondary');
-    dispatch({ type: 'SET_PNL_ENTRIES', payload: [...primary, ...secondary] });
-  }, [state.alerts, dateRangeMatches, state.zerodhaHoldings, dispatch]);
+
+    // Fix actioned status: use ALL matched trades (not just date-range filtered)
+    const allMatchedAlertIds = new Set(state.matchedTrades.map((m) => m.alertId));
+    const fixedEntries = [...primary, ...secondary].map((entry) => ({
+      ...entry,
+      actioned: state.alerts.some(
+        (a) => a.Ticker === entry.ticker && a.Strategy === entry.strategy && allMatchedAlertIds.has(a.id)
+      ),
+    }));
+
+    dispatch({ type: 'SET_PNL_ENTRIES', payload: fixedEntries });
+  }, [state.alerts, state.matchedTrades, dateRangeMatches, state.zerodhaHoldings, dispatch]);
 
   useEffect(() => {
     if (state.alerts.length > 0 || dateRangeMatches.length > 0) {
