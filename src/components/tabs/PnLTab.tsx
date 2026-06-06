@@ -167,7 +167,7 @@ export default function PnLTab() {
       : combinedEntries
   );
 
-  // ── Below Overview: filter by portfolio, ticker, date range, actioned ──
+  // ── Below Overview: filter by portfolio, ticker, actioned (NO date range here) ──
 
   // 1. Portfolio filter
   let baseEntries: PnLEntry[];
@@ -176,18 +176,11 @@ export default function PnLTab() {
   else baseEntries = combinedEntries;
 
   // 2. Global ticker search filter
-  let filtered = state.globalTickerFilter
+  let entries = state.globalTickerFilter
     ? baseEntries.filter((e) => e.ticker.toUpperCase().includes(state.globalTickerFilter.toUpperCase()))
     : baseEntries;
 
-  // 3. Date range filter — only show tickers that had trade activity in the selected date range
-  let entries = useMemo(() => {
-    if (dateRangeTickerSet.size === 0 && !dateRangeLoading) return filtered;
-    if (dateRangeTickerSet.size === 0) return filtered;
-    return filtered.filter((e) => dateRangeTickerSet.has(e.ticker.toUpperCase()));
-  }, [filtered, dateRangeTickerSet, dateRangeLoading]);
-
-  // 4. Actioned filter
+  // 3. Actioned filter
   if (filter === 'actioned') entries = entries.filter((e) => e.actioned);
   else if (filter === 'non-actioned') entries = entries.filter((e) => !e.actioned);
 
@@ -196,7 +189,7 @@ export default function PnLTab() {
 
   const activeSummary = summarise(entries);
 
-  // Chart data — respects date range + portfolio + actioned + ticker filters
+  // Chart data — uses full entries (respects portfolio/actioned/ticker but NOT date range)
   const chartData = entries.map((e) => ({
     ticker: e.ticker,
     realised: e.realisedPnl,
@@ -218,6 +211,12 @@ export default function PnLTab() {
     { name: 'Actioned', value: actionedEntries.length, fill: '#4caf50' },
     { name: 'Non-Actioned', value: nonActionedEntries.length, fill: '#ff9800' },
   ].filter((d) => d.value > 0);
+
+  // 4. Date range filter — ONLY for the Detailed P&L table
+  const detailedEntries = useMemo(() => {
+    if (dateRangeTickerSet.size === 0) return entries;
+    return entries.filter((e) => dateRangeTickerSet.has(e.ticker.toUpperCase()));
+  }, [entries, dateRangeTickerSet]);
 
 
   return (
@@ -258,7 +257,7 @@ export default function PnLTab() {
           <Typography variant="caption" color="text.secondary">Loading...</Typography>
         )}
         <Typography variant="caption" color="text.secondary">
-          Showing {entries.length} tickers with trade activity in this period
+          Showing {detailedEntries.length} tickers with trade activity in this period
         </Typography>
       </Paper>
 
@@ -424,7 +423,7 @@ export default function PnLTab() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {entries.map((entry, i) => {
+                {detailedEntries.map((entry, i) => {
                   const total = entry.realisedPnl + entry.unrealisedPnl;
                   return (
                     <TableRow key={i} hover>
