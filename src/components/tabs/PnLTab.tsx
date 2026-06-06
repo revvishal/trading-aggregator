@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   Box,
   Typography,
@@ -18,6 +18,7 @@ import {
   Alert,
   Button,
   Divider,
+  TextField,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import {
@@ -35,7 +36,8 @@ import {
 } from 'recharts';
 import { useAppContext } from '../../context/AppContext';
 import { calculatePnL } from '../../services/tradeMatchingService';
-import { PnLEntry } from '../../types';
+import { fetchMatchedTradesByDateRange } from '../../services/apiService';
+import { PnLEntry, MatchedTrade } from '../../types';
 
 // ── helper: compute summary from entries ───────────────────────────
 function summarise(entries: PnLEntry[]) {
@@ -107,20 +109,47 @@ export default function PnLTab() {
   const [filter, setFilter] = useState<'all' | 'actioned' | 'non-actioned'>('all');
   const [portfolioView, setPortfolioView] = useState<'combined' | 'primary' | 'secondary'>('combined');
 
-  // Calculate P&L per portfolio
-  const recalculate = () => {
-    // Store primary+secondary concatenated as the "combined" entries
-    const primary = calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings, 'primary');
-    const secondary = calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings, 'secondary');
+  // Date range state — default: last 2 months
+  const [fromDate, setFromDate] = useState<string>(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 2);
+    return d.toISOString().split('T')[0];
+  });
+  const [toDate, setToDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [dateRangeMatches, setDateRangeMatches] = useState<MatchedTrade[]>([]);
+  const [dateRangeLoading, setDateRangeLoading] = useState(false);
+
+  // Fetch matched trades from DB by date range
+  const loadDateRangeMatches = useCallback(async () => {
+    setDateRangeLoading(true);
+    try {
+      const trades = await fetchMatchedTradesByDateRange(fromDate, toDate);
+      setDateRangeMatches(trades);
+    } catch (err) {
+      console.error('Failed to fetch matched trades by date range:', err);
+      setDateRangeMatches([]);
+    } finally {
+      setDateRangeLoading(false);
+    }
+  }, [fromDate, toDate]);
+
+  // Load on mount and when date range changes
+  useEffect(() => {
+    loadDateRangeMatches();
+  }, [loadDateRangeMatches]);
+
+  // Calculate P&L using date-range filtered matched trades
+  const recalculate = useCallback(() => {
+    const primary = calculatePnL(state.alerts, dateRangeMatches, state.zerodhaHoldings, 'primary');
+    const secondary = calculatePnL(state.alerts, dateRangeMatches, state.zerodhaHoldings, 'secondary');
     dispatch({ type: 'SET_PNL_ENTRIES', payload: [...primary, ...secondary] });
-  };
+  }, [state.alerts, dateRangeMatches, state.zerodhaHoldings, dispatch]);
 
   useEffect(() => {
-    if (state.alerts.length > 0 || state.matchedTrades.length > 0) {
+    if (state.alerts.length > 0 || dateRangeMatches.length > 0) {
       recalculate();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.alerts.length, state.matchedTrades.length, state.zerodhaHoldings.length]);
+  }, [state.alerts.length, dateRangeMatches.length, state.zerodhaHoldings.length, recalculate]);
 
   const combinedEntries = state.pnlEntries;
 
@@ -327,10 +356,35 @@ export default function PnLTab() {
           </TableContainer>
 
           {/* ── Detailed P&L Table ───────────────────────────────── */}
-          <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>
-            Detailed P&L {portfolioView !== 'combined' && `(${portfolioView})`}
-          </Typography>
-          <TableContainer component={Paper} variant="outlined">
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1 }}>
+            <Typography variant="subtitle1" fontWeight={600}>
+              Detailed P&L {portfolioView !== 'combined' && `(${portfolioView})`}
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <TextField
+                type="date"
+                size="small"
+                label="From Date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                sx={{ width: 160 }}
+              />
+              <TextField
+                type="date"
+                size="small"
+                label="To Date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                sx={{ width: 160 }}
+              />
+              {dateRangeLoading && (
+                <Typography variant="caption" color="text.secondary">Loading...</Typography>
+              )}
+            </Box>
+          </Box>
+          <TableContainer component={Paper} variant="outlined" sx={{ opacity: dateRangeLoading ? 0.5 : 1 }}>
             <Table size="small">
               <TableHead>
                 <TableRow sx={{ bgcolor: 'grey.100' }}>
