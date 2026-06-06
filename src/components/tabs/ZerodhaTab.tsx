@@ -156,7 +156,7 @@ export default function ZerodhaTab() {
   const [lastSyncDate, setLastSyncDate] = useState<string | null>(null);
   const [holdingsSortDir, setHoldingsSortDir] = useState<'asc' | 'desc'>('desc');
   const [ordersPage, setOrdersPage] = useState(0);
-  const [ordersPerPage, setOrdersPerPage] = useState(20);
+  const [ordersPerPage, setOrdersPerPage] = useState(() => Number(sessionStorage.getItem('zerodha_ordersPerPage')) || 20);
   const [displayOrders, setDisplayOrders] = useState<ZerodhaOrder[]>([]);
   const [totalOrdersDbCount, setTotalOrdersDbCount] = useState(0);
   const [ordersPageLoading, setOrdersPageLoading] = useState(false);
@@ -383,7 +383,9 @@ export default function ZerodhaTab() {
   const totalOrdersPages = Math.ceil(totalOrdersCount / ordersPerPage);
 
   const handleOrdersPerPageChange = (event: SelectChangeEvent<number>) => {
-    setOrdersPerPage(Number(event.target.value));
+    const val = Number(event.target.value);
+    setOrdersPerPage(val);
+    sessionStorage.setItem('zerodha_ordersPerPage', String(val));
     setOrdersPage(0);
   };
 

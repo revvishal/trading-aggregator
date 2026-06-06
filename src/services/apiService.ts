@@ -20,6 +20,12 @@ function setToken(token: string): void {
 function clearToken(): void {
   sessionStorage.removeItem('auth_token');
   sessionStorage.removeItem('auth_username');
+  // Clear pagination preferences on logout
+  sessionStorage.removeItem('signals_perPage');
+  sessionStorage.removeItem('zerodha_ordersPerPage');
+  sessionStorage.removeItem('matched_perPage');
+  sessionStorage.removeItem('unmatchedAlerts_perPage');
+  sessionStorage.removeItem('unmatchedOrders_perPage');
 }
 
 function authHeaders(): Record<string, string> {

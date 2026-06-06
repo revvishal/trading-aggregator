@@ -108,18 +108,18 @@ export default function MatchedTab() {
 
   // Pagination state for Matched Trades (server-side)
   const [matchedPage, setMatchedPage] = useState(0);
-  const [matchedPerPage, setMatchedPerPage] = useState(20);
+  const [matchedPerPage, setMatchedPerPage] = useState(() => Number(sessionStorage.getItem('matched_perPage')) || 20);
   const [displayMatches, setDisplayMatches] = useState<MatchedTrade[]>([]);
   const [totalMatchedDbCount, setTotalMatchedDbCount] = useState(0);
   const [matchedPageLoading, setMatchedPageLoading] = useState(false);
 
   // Pagination state for Unmatched Signals (client-side)
   const [unmatchedAlertsPage, setUnmatchedAlertsPage] = useState(0);
-  const [unmatchedAlertsPerPage, setUnmatchedAlertsPerPage] = useState(20);
+  const [unmatchedAlertsPerPage, setUnmatchedAlertsPerPage] = useState(() => Number(sessionStorage.getItem('unmatchedAlerts_perPage')) || 20);
 
   // Pagination state for Unmatched Orders (client-side)
   const [unmatchedOrdersPage, setUnmatchedOrdersPage] = useState(0);
-  const [unmatchedOrdersPerPage, setUnmatchedOrdersPerPage] = useState(20);
+  const [unmatchedOrdersPerPage, setUnmatchedOrdersPerPage] = useState(() => Number(sessionStorage.getItem('unmatchedOrders_perPage')) || 20);
 
   const isSearchActive = !!state.globalTickerFilter;
 
@@ -242,15 +242,21 @@ export default function MatchedTab() {
 
   // ─── Per-page change handlers ────────────────────────────────────────
   const handleMatchedPerPageChange = (event: SelectChangeEvent<number>) => {
-    setMatchedPerPage(Number(event.target.value));
+    const val = Number(event.target.value);
+    setMatchedPerPage(val);
+    sessionStorage.setItem('matched_perPage', String(val));
     setMatchedPage(0);
   };
   const handleUnmatchedAlertsPerPageChange = (event: SelectChangeEvent<number>) => {
-    setUnmatchedAlertsPerPage(Number(event.target.value));
+    const val = Number(event.target.value);
+    setUnmatchedAlertsPerPage(val);
+    sessionStorage.setItem('unmatchedAlerts_perPage', String(val));
     setUnmatchedAlertsPage(0);
   };
   const handleUnmatchedOrdersPerPageChange = (event: SelectChangeEvent<number>) => {
-    setUnmatchedOrdersPerPage(Number(event.target.value));
+    const val = Number(event.target.value);
+    setUnmatchedOrdersPerPage(val);
+    sessionStorage.setItem('unmatchedOrders_perPage', String(val));
     setUnmatchedOrdersPage(0);
   };
 
