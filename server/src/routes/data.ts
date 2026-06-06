@@ -194,12 +194,29 @@ router.put('/matched-trades', async (req: Request, res: Response) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    //This should not be deleting
-    //await client.query('DELETE FROM matched_trades');
     for (const t of trades) {
       await client.query(
         `INSERT INTO matched_trades (id, alert_id, zerodha_order_id, ticker, match_type, direction, alert_quantity, zerodha_quantity, zerodha_price, alert_close, timestamp, pnl, status, account_type, holding_avg_buy_price, partial_exit_amount, actual_partial_buy_amount, full_exit_amount, actual_full_buy_amount)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+         ON CONFLICT (id) DO UPDATE SET
+           alert_id = EXCLUDED.alert_id,
+           zerodha_order_id = EXCLUDED.zerodha_order_id,
+           ticker = EXCLUDED.ticker,
+           match_type = EXCLUDED.match_type,
+           direction = EXCLUDED.direction,
+           alert_quantity = EXCLUDED.alert_quantity,
+           zerodha_quantity = EXCLUDED.zerodha_quantity,
+           zerodha_price = EXCLUDED.zerodha_price,
+           alert_close = EXCLUDED.alert_close,
+           timestamp = EXCLUDED.timestamp,
+           pnl = EXCLUDED.pnl,
+           status = EXCLUDED.status,
+           account_type = EXCLUDED.account_type,
+           holding_avg_buy_price = EXCLUDED.holding_avg_buy_price,
+           partial_exit_amount = EXCLUDED.partial_exit_amount,
+           actual_partial_buy_amount = EXCLUDED.actual_partial_buy_amount,
+           full_exit_amount = EXCLUDED.full_exit_amount,
+           actual_full_buy_amount = EXCLUDED.actual_full_buy_amount`,
         [t.id, t.alertId, t.zerodhaOrderId, t.ticker, t.matchType, t.direction, t.alertQuantity, t.zerodhaQuantity, t.zerodhaPrice, t.alertClose, t.timestamp, t.pnl || null, t.status, t.accountType || 'primary', t.holdingAvgBuyPrice || null, t.partialExitAmount || 0, t.actualPartialBuyAmount || 0, t.fullExitAmount || 0, t.actualFullBuyAmount || 0]
       );
     }
