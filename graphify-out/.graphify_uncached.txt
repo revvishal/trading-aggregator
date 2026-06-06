@@ -1,0 +1,14 @@
+/Users/Learning-Work/Cursor-Projects/trading-aggregator/.claude/settings.json
+/Users/Learning-Work/Cursor-Projects/trading-aggregator/package.json
+/Users/Learning-Work/Cursor-Projects/trading-aggregator/public/manifest.json
+/Users/Learning-Work/Cursor-Projects/trading-aggregator/server/package.json
+/Users/Learning-Work/Cursor-Projects/trading-aggregator/server/tsconfig.json
+/Users/Learning-Work/Cursor-Projects/trading-aggregator/tsconfig.json
+/Users/Learning-Work/Cursor-Projects/trading-aggregator/CLAUDE.md
+/Users/Learning-Work/Cursor-Projects/trading-aggregator/README.md
+/Users/Learning-Work/Cursor-Projects/trading-aggregator/public/index.html
+/Users/Learning-Work/Cursor-Projects/trading-aggregator/public/robots.txt
+/Users/Learning-Work/Cursor-Projects/trading-aggregator/reducer-flow.md
+/Users/Learning-Work/Cursor-Projects/trading-aggregator/public/logo192.png
+/Users/Learning-Work/Cursor-Projects/trading-aggregator/public/logo512.png
+/Users/Learning-Work/Cursor-Projects/trading-aggregator/src/logo.svg
