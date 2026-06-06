@@ -189,23 +189,37 @@ router.get('/matched-trades', async (req: Request, res: Response) => {
   try {
     const pageParam = req.query.page as string | undefined;
     const limitParam = req.query.limit as string | undefined;
+    const fromDate = req.query.fromDate as string | undefined;
+    const toDate = req.query.toDate as string | undefined;
+
+    // Build WHERE clause for date filtering
+    let whereClause = '';
+    const whereParams: any[] = [];
+    if (fromDate) {
+      whereParams.push(fromDate);
+      whereClause += ` WHERE timestamp >= $${whereParams.length}::date`;
+    }
+    if (toDate) {
+      whereParams.push(toDate + 'T23:59:59.999Z');
+      whereClause += (whereClause ? ' AND' : ' WHERE') + ` timestamp <= $${whereParams.length}`;
+    }
 
     if (pageParam !== undefined && limitParam !== undefined) {
       const page = Math.max(0, parseInt(pageParam) || 0);
       const limit = Math.min(Math.max(1, parseInt(limitParam) || 20), 500);
       const offset = page * limit;
 
-      const countResult = await pool.query('SELECT COUNT(*) FROM matched_trades');
+      const countResult = await pool.query(`SELECT COUNT(*) FROM matched_trades${whereClause}`, whereParams);
       const total = parseInt(countResult.rows[0].count);
 
       const result = await pool.query(
-        'SELECT * FROM matched_trades ORDER BY timestamp DESC LIMIT $1 OFFSET $2',
-        [limit, offset]
+        `SELECT * FROM matched_trades${whereClause} ORDER BY timestamp DESC LIMIT $${whereParams.length + 1} OFFSET $${whereParams.length + 2}`,
+        [...whereParams, limit, offset]
       );
       const trades = result.rows.map(rowToMatchedTrade);
       res.json({ trades, total, page, limit });
     } else {
-      const result = await pool.query('SELECT * FROM matched_trades ORDER BY timestamp DESC');
+      const result = await pool.query(`SELECT * FROM matched_trades${whereClause} ORDER BY timestamp DESC`, whereParams);
       const trades = result.rows.map(rowToMatchedTrade);
       res.json(trades);
     }

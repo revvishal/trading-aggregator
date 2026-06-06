@@ -169,6 +169,12 @@ export async function fetchMatchedTradesPaginated(page: number, limit: number): 
   return handleResponse(res);
 }
 
+export async function fetchMatchedTradesByDateRange(fromDate: string, toDate: string): Promise<any[]> {
+  const params = new URLSearchParams({ fromDate, toDate });
+  const res = await fetch(`${API_BASE}/api/data/matched-trades?${params}`, { headers: authHeaders() });
+  return handleResponse(res);
+}
+
 export async function saveMatchedTrades(trades: any[]): Promise<void> {
   const res = await fetch(`${API_BASE}/api/data/matched-trades`, {
     method: 'PUT', headers: authHeaders(), body: JSON.stringify(trades),

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Box,
   Typography,
@@ -18,6 +18,7 @@ import {
   Alert,
   Button,
   Divider,
+  TextField,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import {
@@ -35,7 +36,8 @@ import {
 } from 'recharts';
 import { useAppContext } from '../../context/AppContext';
 import { calculatePnL } from '../../services/tradeMatchingService';
-import { PnLEntry } from '../../types';
+import { fetchMatchedTradesByDateRange } from '../../services/apiService';
+import { PnLEntry, MatchedTrade } from '../../types';
 
 // ── helper: compute summary from entries ───────────────────────────
 function summarise(entries: PnLEntry[]) {
@@ -107,22 +109,54 @@ export default function PnLTab() {
   const [filter, setFilter] = useState<'all' | 'actioned' | 'non-actioned'>('all');
   const [portfolioView, setPortfolioView] = useState<'combined' | 'primary' | 'secondary'>('combined');
 
-  // Calculate P&L per portfolio
-  const recalculate = () => {
-    // Store primary+secondary concatenated as the "combined" entries
+  // Date range state — default: last 2 months
+  const [fromDate, setFromDate] = useState<string>(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 2);
+    return d.toISOString().split('T')[0];
+  });
+  const [toDate, setToDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [dateRangeMatches, setDateRangeMatches] = useState<MatchedTrade[]>([]);
+  const [dateRangeLoading, setDateRangeLoading] = useState(false);
+
+  // Fetch matched trades from DB by date range (used only as display filter)
+  const loadDateRangeMatches = useCallback(async () => {
+    setDateRangeLoading(true);
+    try {
+      const trades = await fetchMatchedTradesByDateRange(fromDate, toDate);
+      setDateRangeMatches(trades);
+    } catch (err) {
+      console.error('Failed to fetch matched trades by date range:', err);
+      setDateRangeMatches([]);
+    } finally {
+      setDateRangeLoading(false);
+    }
+  }, [fromDate, toDate]);
+
+  // Load on mount and when date range changes
+  useEffect(() => {
+    loadDateRangeMatches();
+  }, [loadDateRangeMatches]);
+
+  // Calculate P&L using ALL matched trades (full correct computation)
+  const recalculate = useCallback(() => {
     const primary = calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings, 'primary');
     const secondary = calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings, 'secondary');
     dispatch({ type: 'SET_PNL_ENTRIES', payload: [...primary, ...secondary] });
-  };
+  }, [state.alerts, state.matchedTrades, state.zerodhaHoldings, dispatch]);
 
   useEffect(() => {
     if (state.alerts.length > 0 || state.matchedTrades.length > 0) {
       recalculate();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.alerts.length, state.matchedTrades.length, state.zerodhaHoldings.length]);
+  }, [state.alerts.length, state.matchedTrades.length, state.zerodhaHoldings.length, recalculate]);
 
   const combinedEntries = state.pnlEntries;
+
+  // Build a set of tickers that had matched trade activity in the date range
+  const dateRangeTickerSet = useMemo(() => {
+    return new Set(dateRangeMatches.map((t) => t.ticker.toUpperCase()));
+  }, [dateRangeMatches]);
 
   // Select active entries based on portfolio toggle
   let baseEntries: PnLEntry[];
@@ -142,7 +176,7 @@ export default function PnLTab() {
   const actionedEntries = entries.filter((e) => e.actioned);
   const nonActionedEntries = entries.filter((e) => !e.actioned);
 
-  // Summaries
+  // Summaries — always use full entries (not date-filtered)
   const primarySummary = summarise(combinedEntries.filter((e) => e.accountType === 'primary'));
   const secondarySummary = summarise(combinedEntries.filter((e) => e.accountType === 'secondary'));
   const combinedSummary = summarise(
@@ -152,7 +186,7 @@ export default function PnLTab() {
   );
   const activeSummary = summarise(entries);
 
-  // Chart data
+  // Chart data — uses entries (full data, respects portfolio/actioned/ticker filters)
   const chartData = entries.map((e) => ({
     ticker: e.ticker,
     realised: e.realisedPnl,
@@ -174,6 +208,12 @@ export default function PnLTab() {
     { name: 'Actioned', value: actionedEntries.length, fill: '#4caf50' },
     { name: 'Non-Actioned', value: nonActionedEntries.length, fill: '#ff9800' },
   ].filter((d) => d.value > 0);
+
+  // Detailed P&L entries — filtered by date range (only tickers with activity in range)
+  const detailedEntries = useMemo(() => {
+    if (dateRangeTickerSet.size === 0) return entries;
+    return entries.filter((e) => dateRangeTickerSet.has(e.ticker.toUpperCase()));
+  }, [entries, dateRangeTickerSet]);
 
   return (
     <Box>
@@ -327,10 +367,35 @@ export default function PnLTab() {
           </TableContainer>
 
           {/* ── Detailed P&L Table ───────────────────────────────── */}
-          <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>
-            Detailed P&L {portfolioView !== 'combined' && `(${portfolioView})`}
-          </Typography>
-          <TableContainer component={Paper} variant="outlined">
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1 }}>
+            <Typography variant="subtitle1" fontWeight={600}>
+              Detailed P&L {portfolioView !== 'combined' && `(${portfolioView})`}
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <TextField
+                type="date"
+                size="small"
+                label="From Date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                sx={{ width: 160 }}
+              />
+              <TextField
+                type="date"
+                size="small"
+                label="To Date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                sx={{ width: 160 }}
+              />
+              {dateRangeLoading && (
+                <Typography variant="caption" color="text.secondary">Loading...</Typography>
+              )}
+            </Box>
+          </Box>
+          <TableContainer component={Paper} variant="outlined" sx={{ opacity: dateRangeLoading ? 0.5 : 1 }}>
             <Table size="small">
               <TableHead>
                 <TableRow sx={{ bgcolor: 'grey.100' }}>
@@ -350,7 +415,7 @@ export default function PnLTab() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {entries.map((entry, i) => {
+                {detailedEntries.map((entry, i) => {
                   const total = entry.realisedPnl + entry.unrealisedPnl;
                   return (
                     <TableRow key={i} hover>
