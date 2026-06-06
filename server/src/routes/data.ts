@@ -197,11 +197,11 @@ router.get('/matched-trades', async (req: Request, res: Response) => {
     const whereParams: any[] = [];
     if (fromDate) {
       whereParams.push(fromDate);
-      whereClause += ` WHERE timestamp >= $${whereParams.length}::date`;
+      whereClause += ` WHERE timestamp::timestamp >= $${whereParams.length}::date`;
     }
     if (toDate) {
       whereParams.push(toDate + 'T23:59:59.999Z');
-      whereClause += (whereClause ? ' AND' : ' WHERE') + ` timestamp <= $${whereParams.length}`;
+      whereClause += (whereClause ? ' AND' : ' WHERE') + ` timestamp::timestamp <= $${whereParams.length}::timestamp`;
     }
 
     if (pageParam !== undefined && limitParam !== undefined) {
