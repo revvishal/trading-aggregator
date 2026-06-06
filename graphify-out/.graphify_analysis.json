@@ -1,0 +1,488 @@
+{
+  "communities": {
+    "0": [
+      "services_apiservice",
+      "services_apiservice_appendmatchedtrades",
+      "services_apiservice_authheaders",
+      "services_apiservice_clearalldata",
+      "services_apiservice_cleartoken",
+      "services_apiservice_clearwebhookalerts",
+      "services_apiservice_disconnectzerodha",
+      "services_apiservice_fetchalerts",
+      "services_apiservice_fetchexitsummary",
+      "services_apiservice_fetchholdings",
+      "services_apiservice_fetchmatchedtrades",
+      "services_apiservice_fetchorders",
+      "services_apiservice_fetchpnlentries",
+      "services_apiservice_fetchsyncmeta",
+      "services_apiservice_fetchwebhookalertcount",
+      "services_apiservice_fetchwebhookalerts",
+      "services_apiservice_fetchzerodhaholdings",
+      "services_apiservice_fetchzerodhaorders",
+      "services_apiservice_fetchzerodhapositions",
+      "services_apiservice_fetchzerodhaprofile",
+      "services_apiservice_gettoken",
+      "services_apiservice_getzerodhaloginurl",
+      "services_apiservice_getzerodhastatus",
+      "services_apiservice_getzerodhastatusall",
+      "services_apiservice_handleresponse",
+      "services_apiservice_logout",
+      "services_apiservice_savealerts",
+      "services_apiservice_saveholdings",
+      "services_apiservice_savematchedtrades",
+      "services_apiservice_saveorders",
+      "services_apiservice_savepnlentries",
+      "services_apiservice_savetickerfinancials",
+      "services_apiservice_uploadfinancialscsv",
+      "services_apiservice_verifytoken",
+      "services_apiservice_zerodhastatus",
+      "services_apiservice_zerodhastatusall",
+      "tabs_zerodhatab",
+      "tabs_zerodhatab_sample_holdings",
+      "tabs_zerodhatab_sample_orders"
+    ],
+    "1": [
+      "context_appcontext",
+      "context_appcontext_action",
+      "context_appcontext_appcontext",
+      "context_appcontext_appcontexttype",
+      "context_appcontext_appprovider",
+      "context_appcontext_initialstate",
+      "context_appcontext_reducer",
+      "context_appcontext_useappcontext",
+      "services_apiservice_getusername",
+      "services_apiservice_isloggedin",
+      "services_tradematchingservice",
+      "services_tradematchingservice_calculatepnl",
+      "services_tradematchingservice_matchtradeswithalerts",
+      "src_app",
+      "src_app_app",
+      "src_app_appcontent",
+      "src_app_test",
+      "src_app_theme",
+      "tabs_matchedtab",
+      "tabs_matchedtab_matchedtab",
+      "tabs_matchedtab_matchtypecolor",
+      "tabs_matchedtab_matchtypelabels",
+      "tabs_pnltab",
+      "tabs_pnltab_pnltab",
+      "tabs_pnltab_summarise",
+      "tabs_pnltab_summarycards",
+      "tabs_signalstab_signalstab",
+      "tabs_zerodhatab_zerodhatab",
+      "types_index",
+      "types_index_analystrating",
+      "types_index_appstate",
+      "types_index_matchedtrade",
+      "types_index_ordertype",
+      "types_index_pnlentry",
+      "types_index_quarterlyresult",
+      "types_index_tradingviewalert",
+      "types_index_zerodhaholding",
+      "types_index_zerodhaorder"
+    ],
+    "2": [
+      "db_index",
+      "db_index_initdatabase",
+      "db_index_nowist",
+      "db_index_pool",
+      "db_index_toist",
+      "middleware_auth",
+      "middleware_auth_authmiddleware",
+      "routes_auth",
+      "routes_auth_router",
+      "routes_data",
+      "routes_data_router",
+      "routes_data_rowtoalert",
+      "routes_data_rowtoholding",
+      "routes_data_rowtomatchedtrade",
+      "routes_data_rowtoorder",
+      "routes_data_rowtopnlentry",
+      "routes_financials",
+      "routes_financials_parsecsvline",
+      "routes_financials_parsefundamentalscsv",
+      "routes_financials_router",
+      "routes_webhook",
+      "routes_webhook_router",
+      "routes_zerodha",
+      "routes_zerodha_accountconfig",
+      "routes_zerodha_accounts",
+      "routes_zerodha_accountsession",
+      "routes_zerodha_getaccountconfig",
+      "routes_zerodha_getaccounttype",
+      "routes_zerodha_getsession",
+      "routes_zerodha_handlekiteerror",
+      "routes_zerodha_requireconnection",
+      "routes_zerodha_restoresessionfromdb",
+      "routes_zerodha_router",
+      "routes_zerodha_sessions",
+      "server_src_index_ts_src_index",
+      "src_index_app"
+    ],
+    "3": [
+      "common_financialcard",
+      "common_financialcard_coloredvalue",
+      "common_financialcard_financialcard",
+      "common_financialcard_financialcardprops",
+      "common_financialcard_trendicon",
+      "common_jsoninputmodal",
+      "common_jsoninputmodal_jsoninputmodal",
+      "common_jsoninputmodal_jsoninputmodalprops",
+      "common_scorebadge",
+      "common_scorebadge_scorebadge",
+      "common_scorebadge_scorebadgeprops",
+      "services_apiservice_checkserverhealth",
+      "services_apiservice_fetchtickerfinancials",
+      "services_financialservice",
+      "services_financialservice_getanalystrecommendation",
+      "services_financialservice_getfinancialdata",
+      "tabs_signalstab",
+      "tabs_signalstab_ordertypecolor",
+      "tabs_signalstab_sample_alert",
+      "tabs_signalstab_statuscolor",
+      "types_index_analystrecommendation",
+      "types_index_quarterlyfinancials",
+      "widgets_tradingviewfundamentalwidget",
+      "widgets_tradingviewfundamentalwidget_tradingviewfundamentalwidget",
+      "widgets_tradingviewfundamentalwidget_tradingviewfundamentalwidgetprops",
+      "widgets_tradingviewrecommendationwidget",
+      "widgets_tradingviewrecommendationwidget_tradingviewrecommendationwidget",
+      "widgets_tradingviewrecommendationwidget_tradingviewrecommendationwidgetprops"
+    ],
+    "4": [
+      "server_package",
+      "server_package_dependencies",
+      "server_package_dependencies_cors",
+      "server_package_dependencies_dotenv",
+      "server_package_dependencies_express",
+      "server_package_dependencies_jsonwebtoken",
+      "server_package_dependencies_kiteconnect",
+      "server_package_dependencies_pg",
+      "server_package_dependencies_uuid",
+      "server_package_devdependencies",
+      "server_package_devdependencies_ts_node_dev",
+      "server_package_devdependencies_types_cors",
+      "server_package_devdependencies_types_express",
+      "server_package_devdependencies_types_jsonwebtoken",
+      "server_package_devdependencies_types_node",
+      "server_package_devdependencies_types_pg",
+      "server_package_devdependencies_types_uuid",
+      "server_package_devdependencies_typescript",
+      "server_package_name",
+      "server_package_private",
+      "server_package_scripts",
+      "server_package_scripts_build",
+      "server_package_scripts_dev",
+      "server_package_scripts_start",
+      "server_package_version"
+    ],
+    "5": [
+      "package_dependencies",
+      "package_dependencies_emotion_react",
+      "package_dependencies_emotion_styled",
+      "package_dependencies_http_proxy_middleware",
+      "package_dependencies_mui_icons_material",
+      "package_dependencies_mui_material",
+      "package_dependencies_react",
+      "package_dependencies_react_dom",
+      "package_dependencies_react_scripts",
+      "package_dependencies_recharts",
+      "package_dependencies_testing_library_dom",
+      "package_dependencies_testing_library_jest_dom",
+      "package_dependencies_testing_library_react",
+      "package_dependencies_testing_library_user_event",
+      "package_dependencies_types_jest",
+      "package_dependencies_types_node",
+      "package_dependencies_types_react",
+      "package_dependencies_types_react_dom",
+      "package_dependencies_types_uuid",
+      "package_dependencies_typescript",
+      "package_dependencies_uuid",
+      "package_dependencies_web_vitals"
+    ],
+    "6": [
+      "package",
+      "package_browserslist",
+      "package_browserslist_development",
+      "package_browserslist_production",
+      "package_devdependencies",
+      "package_devdependencies_concurrently",
+      "package_eslintconfig",
+      "package_eslintconfig_extends",
+      "package_name",
+      "package_private",
+      "package_scripts",
+      "package_scripts_build",
+      "package_scripts_build_server",
+      "package_scripts_compile",
+      "package_scripts_dev",
+      "package_scripts_eject",
+      "package_scripts_start",
+      "package_scripts_start_server",
+      "package_scripts_test",
+      "package_version"
+    ],
+    "7": [
+      "tsconfig",
+      "tsconfig_compileroptions",
+      "tsconfig_compileroptions_allowjs",
+      "tsconfig_compileroptions_allowsyntheticdefaultimports",
+      "tsconfig_compileroptions_esmoduleinterop",
+      "tsconfig_compileroptions_forceconsistentcasinginfilenames",
+      "tsconfig_compileroptions_isolatedmodules",
+      "tsconfig_compileroptions_jsx",
+      "tsconfig_compileroptions_lib",
+      "tsconfig_compileroptions_module",
+      "tsconfig_compileroptions_moduleresolution",
+      "tsconfig_compileroptions_noemit",
+      "tsconfig_compileroptions_nofallthroughcasesinswitch",
+      "tsconfig_compileroptions_resolvejsonmodule",
+      "tsconfig_compileroptions_skiplibcheck",
+      "tsconfig_compileroptions_strict",
+      "tsconfig_compileroptions_target",
+      "tsconfig_include"
+    ],
+    "8": [
+      "server_tsconfig",
+      "server_tsconfig_compileroptions",
+      "server_tsconfig_compileroptions_declaration",
+      "server_tsconfig_compileroptions_declarationmap",
+      "server_tsconfig_compileroptions_esmoduleinterop",
+      "server_tsconfig_compileroptions_forceconsistentcasinginfilenames",
+      "server_tsconfig_compileroptions_lib",
+      "server_tsconfig_compileroptions_module",
+      "server_tsconfig_compileroptions_outdir",
+      "server_tsconfig_compileroptions_resolvejsonmodule",
+      "server_tsconfig_compileroptions_rootdir",
+      "server_tsconfig_compileroptions_skiplibcheck",
+      "server_tsconfig_compileroptions_sourcemap",
+      "server_tsconfig_compileroptions_strict",
+      "server_tsconfig_compileroptions_target",
+      "server_tsconfig_exclude",
+      "server_tsconfig_include"
+    ],
+    "9": [
+      "public_manifest",
+      "public_manifest_background_color",
+      "public_manifest_display",
+      "public_manifest_icons",
+      "public_manifest_name",
+      "public_manifest_short_name",
+      "public_manifest_start_url",
+      "public_manifest_theme_color"
+    ],
+    "10": [
+      "services_storageservice",
+      "services_storageservice_clearall",
+      "services_storageservice_clearitems",
+      "services_storageservice_exportalldata",
+      "services_storageservice_getitems",
+      "services_storageservice_importalldata",
+      "services_storageservice_saveitems",
+      "services_storageservice_storage_keys"
+    ],
+    "11": [
+      "database_neon_postgresql",
+      "package_trading_aggregator",
+      "readme_architecture",
+      "reducer_flow_app_context",
+      "server_package_trading_aggregator_server",
+      "server_webhook_endpoint",
+      "server_zerodha_integration"
+    ],
+    "12": [
+      "components_login",
+      "components_login_login",
+      "components_login_loginprops",
+      "services_apiservice_login",
+      "services_apiservice_settoken"
+    ],
+    "13": [
+      "src_index_root",
+      "src_index_tsx_src_index",
+      "src_reportwebvitals",
+      "src_reportwebvitals_reportwebvitals"
+    ],
+    "14": [
+      "claude_settings",
+      "claude_settings_hooks",
+      "claude_settings_hooks_pretooluse"
+    ],
+    "15": [
+      "src_setupproxy",
+      "src_setupproxy_createproxymiddleware"
+    ],
+    "16": [
+      "src_react_app_env_d"
+    ],
+    "17": [
+      "src_setuptests"
+    ]
+  },
+  "cohesion": {
+    "0": 0.14304993252361672,
+    "1": 0.0953058321479374,
+    "2": 0.0873015873015873,
+    "3": 0.09259259259259259,
+    "4": 0.08,
+    "5": 0.09090909090909091,
+    "6": 0.1,
+    "7": 0.1111111111111111,
+    "8": 0.11764705882352941,
+    "9": 0.25,
+    "10": 0.25,
+    "11": 0.3333333333333333,
+    "12": 0.4,
+    "13": 0.5,
+    "14": 0.6666666666666666,
+    "15": 1.0,
+    "16": 1.0,
+    "17": 1.0
+  },
+  "gods": [
+    {
+      "id": "services_apiservice_authheaders",
+      "label": "authHeaders()",
+      "degree": 30
+    },
+    {
+      "id": "services_apiservice_handleresponse",
+      "label": "handleResponse()",
+      "degree": 29
+    },
+    {
+      "id": "tsconfig_compileroptions",
+      "label": "compilerOptions",
+      "degree": 16
+    },
+    {
+      "id": "server_tsconfig_compileroptions",
+      "label": "compilerOptions",
+      "degree": 14
+    },
+    {
+      "id": "context_appcontext_useappcontext",
+      "label": "useAppContext()",
+      "degree": 11
+    },
+    {
+      "id": "package_scripts",
+      "label": "scripts",
+      "degree": 9
+    },
+    {
+      "id": "services_apiservice_fetchtickerfinancials",
+      "label": "fetchTickerFinancials()",
+      "degree": 6
+    },
+    {
+      "id": "db_index_pool",
+      "label": "pool",
+      "degree": 5
+    },
+    {
+      "id": "services_apiservice_verifytoken",
+      "label": "verifyToken()",
+      "degree": 5
+    },
+    {
+      "id": "server_package_scripts",
+      "label": "scripts",
+      "degree": 4
+    }
+  ],
+  "surprises": [
+    {
+      "source": "Trading Aggregator Frontend",
+      "target": "AppContext Reducer State Management",
+      "source_files": [
+        "package.json",
+        "reducer-flow.md"
+      ],
+      "confidence": "INFERRED",
+      "relation": "implements",
+      "why": "inferred connection - not explicitly stated in source; crosses file types (code ↔ doc); connects across different repos/directories"
+    },
+    {
+      "source": "System Architecture",
+      "target": "Trading Aggregator Frontend",
+      "source_files": [
+        "README.md",
+        "package.json"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "references",
+      "why": "crosses file types (code ↔ doc); connects across different repos/directories"
+    },
+    {
+      "source": "System Architecture",
+      "target": "Trading Aggregator Backend",
+      "source_files": [
+        "README.md",
+        "server/package.json"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "references",
+      "why": "crosses file types (code ↔ doc); connects across different repos/directories"
+    },
+    {
+      "source": "Trading Aggregator Backend",
+      "target": "Webhook API (/api/webhook)",
+      "source_files": [
+        "server/package.json",
+        "README.md"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "implements",
+      "why": "crosses file types (code ↔ doc); connects across different repos/directories"
+    },
+    {
+      "source": "Trading Aggregator Backend",
+      "target": "Zerodha Kite Integration",
+      "source_files": [
+        "server/package.json",
+        "README.md"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "implements",
+      "why": "crosses file types (code ↔ doc); connects across different repos/directories"
+    }
+  ],
+  "questions": [
+    {
+      "type": "bridge_node",
+      "question": "Why does `dependencies` connect `Community 5` to `Community 6`?",
+      "why": "High betweenness centrality (0.016) - this node is a cross-community bridge."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `useAppContext()` connect `Community 1` to `Community 0`, `Community 3`?",
+      "why": "High betweenness centrality (0.007) - this node is a cross-community bridge."
+    },
+    {
+      "type": "isolated_nodes",
+      "question": "What connects `PreToolUse`, `name`, `version` to the rest of the system?",
+      "why": "126 weakly-connected nodes found - possible documentation gaps or missing edges."
+    },
+    {
+      "type": "low_cohesion",
+      "question": "Should `Community 0` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.14304993252361672 - nodes in this community are weakly interconnected."
+    },
+    {
+      "type": "low_cohesion",
+      "question": "Should `Community 1` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.0953058321479374 - nodes in this community are weakly interconnected."
+    },
+    {
+      "type": "low_cohesion",
+      "question": "Should `Community 2` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.0873015873015873 - nodes in this community are weakly interconnected."
+    },
+    {
+      "type": "low_cohesion",
+      "question": "Should `Community 3` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.09259259259259259 - nodes in this community are weakly interconnected."
+    }
+  ]
+}
