@@ -138,18 +138,26 @@ export default function PnLTab() {
     loadDateRangeMatches();
   }, [loadDateRangeMatches]);
 
-  // Calculate P&L using date-range matched trades, but fix actioned from ALL matched trades
+  // Calculate P&L using date-range matched trades for P&L numbers,
+  // but use ALL matched trades for actioned status determination
   const recalculate = useCallback(() => {
-    const matchesToUse = dateRangeMatches.length > 0 ? dateRangeMatches : state.matchedTrades;
-    const primary = calculatePnL(state.alerts, matchesToUse, state.zerodhaHoldings, 'primary');
-    const secondary = calculatePnL(state.alerts, matchesToUse, state.zerodhaHoldings, 'secondary');
+    const matchesForPnl = dateRangeMatches.length > 0 ? dateRangeMatches : state.matchedTrades;
 
-    // Fix actioned: a ticker is "actioned" if it was EVER matched (regardless of date range)
+    // Calculate P&L with date-range trades (controls realised/unrealised numbers)
+    const primaryPnl = calculatePnL(state.alerts, matchesForPnl, state.zerodhaHoldings, 'primary');
+    const secondaryPnl = calculatePnL(state.alerts, matchesForPnl, state.zerodhaHoldings, 'secondary');
+
+    // Calculate actioned status from ALL matched trades (not date-filtered)
     const allMatchedAlertIds = new Set(state.matchedTrades.map((m) => m.alertId));
-    const fixedEntries = [...primary, ...secondary].map((entry) => ({
+
+    // Fix actioned: use all-time matched alert IDs per ticker+strategy
+    const fixedEntries = [...primaryPnl, ...secondaryPnl].map((entry) => ({
       ...entry,
       actioned: state.alerts.some(
-        (a) => a.Ticker.toUpperCase() === entry.ticker.toUpperCase() && allMatchedAlertIds.has(a.id)
+        (a) =>
+          a.Ticker.toUpperCase() === entry.ticker.toUpperCase() &&
+          (a.Strategy || '') === (entry.strategy || '') &&
+          allMatchedAlertIds.has(a.id)
       ),
     }));
 
