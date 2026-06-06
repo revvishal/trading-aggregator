@@ -119,7 +119,7 @@ export default function PnLTab() {
   const [dateRangeMatches, setDateRangeMatches] = useState<MatchedTrade[]>([]);
   const [dateRangeLoading, setDateRangeLoading] = useState(false);
 
-  // Fetch matched trades from DB by date range (used only as display filter)
+  // Fetch matched trades from DB by date range
   const loadDateRangeMatches = useCallback(async () => {
     setDateRangeLoading(true);
     try {
@@ -138,27 +138,33 @@ export default function PnLTab() {
     loadDateRangeMatches();
   }, [loadDateRangeMatches]);
 
-  // Calculate P&L using ALL matched trades (full correct computation)
+  // Calculate P&L using date-range matched trades, but fix actioned from ALL matched trades
   const recalculate = useCallback(() => {
-    const primary = calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings, 'primary');
-    const secondary = calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings, 'secondary');
-    dispatch({ type: 'SET_PNL_ENTRIES', payload: [...primary, ...secondary] });
-  }, [state.alerts, state.matchedTrades, state.zerodhaHoldings, dispatch]);
+    const matchesToUse = dateRangeMatches.length > 0 ? dateRangeMatches : state.matchedTrades;
+    const primary = calculatePnL(state.alerts, matchesToUse, state.zerodhaHoldings, 'primary');
+    const secondary = calculatePnL(state.alerts, matchesToUse, state.zerodhaHoldings, 'secondary');
+
+    // Fix actioned: a ticker is "actioned" if it was EVER matched (regardless of date range)
+    const allMatchedAlertIds = new Set(state.matchedTrades.map((m) => m.alertId));
+    const fixedEntries = [...primary, ...secondary].map((entry) => ({
+      ...entry,
+      actioned: state.alerts.some(
+        (a) => a.Ticker.toUpperCase() === entry.ticker.toUpperCase() && allMatchedAlertIds.has(a.id)
+      ),
+    }));
+
+    dispatch({ type: 'SET_PNL_ENTRIES', payload: fixedEntries });
+  }, [state.alerts, state.matchedTrades, dateRangeMatches, state.zerodhaHoldings, dispatch]);
 
   useEffect(() => {
     if (state.alerts.length > 0 || state.matchedTrades.length > 0) {
       recalculate();
     }
-  }, [state.alerts.length, state.matchedTrades.length, state.zerodhaHoldings.length, recalculate]);
+  }, [state.alerts.length, state.matchedTrades.length, dateRangeMatches.length, state.zerodhaHoldings.length, recalculate]);
 
   const combinedEntries = state.pnlEntries;
 
-  // Build a set of tickers that had matched trade activity in the date range
-  const dateRangeTickerSet = useMemo(() => {
-    return new Set(dateRangeMatches.map((t) => t.ticker.toUpperCase()));
-  }, [dateRangeMatches]);
-
-  // ── Portfolio Overview Summaries — always ALL-TIME (unaffected by date range) ──
+  // Summaries — computed from date-range-filtered entries
   const primarySummary = summarise(combinedEntries.filter((e) => e.accountType === 'primary'));
   const secondarySummary = summarise(combinedEntries.filter((e) => e.accountType === 'secondary'));
   const combinedSummary = summarise(
@@ -167,20 +173,18 @@ export default function PnLTab() {
       : combinedEntries
   );
 
-  // ── Below Overview: filter by portfolio, ticker, actioned (NO date range here) ──
-
-  // 1. Portfolio filter
+  // Select active entries based on portfolio toggle
   let baseEntries: PnLEntry[];
   if (portfolioView === 'primary') baseEntries = combinedEntries.filter((e) => e.accountType === 'primary');
   else if (portfolioView === 'secondary') baseEntries = combinedEntries.filter((e) => e.accountType === 'secondary');
   else baseEntries = combinedEntries;
 
-  // 2. Global ticker search filter
+  // Apply global ticker filter
   let entries = state.globalTickerFilter
     ? baseEntries.filter((e) => e.ticker.toUpperCase().includes(state.globalTickerFilter.toUpperCase()))
     : baseEntries;
 
-  // 3. Actioned filter
+  // Apply actioned filter
   if (filter === 'actioned') entries = entries.filter((e) => e.actioned);
   else if (filter === 'non-actioned') entries = entries.filter((e) => !e.actioned);
 
@@ -189,7 +193,7 @@ export default function PnLTab() {
 
   const activeSummary = summarise(entries);
 
-  // Chart data — uses full entries (respects portfolio/actioned/ticker but NOT date range)
+  // Chart data
   const chartData = entries.map((e) => ({
     ticker: e.ticker,
     realised: e.realisedPnl,
@@ -212,16 +216,9 @@ export default function PnLTab() {
     { name: 'Non-Actioned', value: nonActionedEntries.length, fill: '#ff9800' },
   ].filter((d) => d.value > 0);
 
-  // 4. Date range filter — ONLY for the Detailed P&L table
-  const detailedEntries = useMemo(() => {
-    if (dateRangeTickerSet.size === 0) return entries;
-    return entries.filter((e) => dateRangeTickerSet.has(e.ticker.toUpperCase()));
-  }, [entries, dateRangeTickerSet]);
-
-
   return (
     <Box>
-      {/* ── Portfolio-level Summary Cards (always visible) ────────── */}
+      {/* ── Portfolio-level Summary Cards ────────────────────────── */}
       <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
         <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>
           Portfolio P&L Overview
@@ -257,7 +254,7 @@ export default function PnLTab() {
           <Typography variant="caption" color="text.secondary">Loading...</Typography>
         )}
         <Typography variant="caption" color="text.secondary">
-          Showing {detailedEntries.length} tickers with trade activity in this period
+          {dateRangeMatches.length} matched trades in this period
         </Typography>
       </Paper>
 
@@ -423,7 +420,7 @@ export default function PnLTab() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {detailedEntries.map((entry, i) => {
+                {entries.map((entry, i) => {
                   const total = entry.realisedPnl + entry.unrealisedPnl;
                   return (
                     <TableRow key={i} hover>
