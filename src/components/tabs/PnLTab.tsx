@@ -109,13 +109,19 @@ export default function PnLTab() {
   const [filter, setFilter] = useState<'all' | 'actioned' | 'non-actioned'>('all');
   const [portfolioView, setPortfolioView] = useState<'combined' | 'primary' | 'secondary'>('combined');
 
-  // Date range state — default: last 2 months
+  // Date range state — default: last 2 months, persisted in sessionStorage
   const [fromDate, setFromDate] = useState<string>(() => {
+    const stored = sessionStorage.getItem('pnl_fromDate');
+    if (stored) return stored;
     const d = new Date();
     d.setMonth(d.getMonth() - 2);
     return d.toISOString().split('T')[0];
   });
-  const [toDate, setToDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [toDate, setToDate] = useState<string>(() => {
+    const stored = sessionStorage.getItem('pnl_toDate');
+    if (stored) return stored;
+    return new Date().toISOString().split('T')[0];
+  });
   const [dateRangeMatches, setDateRangeMatches] = useState<MatchedTrade[]>([]);
   const [dateRangeLoading, setDateRangeLoading] = useState(false);
 
@@ -224,6 +230,12 @@ export default function PnLTab() {
     { name: 'Non-Actioned', value: nonActionedEntries.length, fill: '#ff9800' },
   ].filter((d) => d.value > 0);
 
+  // Detailed P&L: only tickers with matched trade activity in date range
+  const dateRangeTickerSet = new Set(dateRangeMatches.map((t) => t.ticker.toUpperCase()));
+  const detailedEntries = dateRangeTickerSet.size > 0
+    ? entries.filter((e) => dateRangeTickerSet.has(e.ticker.toUpperCase()))
+    : entries;
+
   return (
     <Box>
       {/* ── Portfolio-level Summary Cards ────────────────────────── */}
@@ -245,7 +257,7 @@ export default function PnLTab() {
           size="small"
           label="From Date"
           value={fromDate}
-          onChange={(e) => setFromDate(e.target.value)}
+          onChange={(e) => { setFromDate(e.target.value); sessionStorage.setItem('pnl_fromDate', e.target.value); }}
           InputLabelProps={{ shrink: true }}
           sx={{ width: 160 }}
         />
@@ -254,7 +266,7 @@ export default function PnLTab() {
           size="small"
           label="To Date"
           value={toDate}
-          onChange={(e) => setToDate(e.target.value)}
+          onChange={(e) => { setToDate(e.target.value); sessionStorage.setItem('pnl_toDate', e.target.value); }}
           InputLabelProps={{ shrink: true }}
           sx={{ width: 160 }}
         />
@@ -406,7 +418,7 @@ export default function PnLTab() {
 
           {/* ── Detailed P&L Table ───────────────────────────────── */}
           <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>
-            Detailed P&L {portfolioView !== 'combined' && `(${portfolioView})`}
+            Detailed P&L {portfolioView !== 'combined' && `(${portfolioView})`} ({detailedEntries.length})
           </Typography>
           <TableContainer component={Paper} variant="outlined">
             <Table size="small">
@@ -428,7 +440,7 @@ export default function PnLTab() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {entries.map((entry, i) => {
+                {detailedEntries.map((entry, i) => {
                   const total = entry.realisedPnl + entry.unrealisedPnl;
                   return (
                     <TableRow key={i} hover>
