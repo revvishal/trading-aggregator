@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   Box,
   Typography,
@@ -109,17 +109,23 @@ export default function PnLTab() {
   const [filter, setFilter] = useState<'all' | 'actioned' | 'non-actioned'>('all');
   const [portfolioView, setPortfolioView] = useState<'combined' | 'primary' | 'secondary'>('combined');
 
-  // Date range state — default: last 2 months
+  // Date range state — default: last 2 months, persisted in sessionStorage
   const [fromDate, setFromDate] = useState<string>(() => {
+    const stored = sessionStorage.getItem('pnl_fromDate');
+    if (stored) return stored;
     const d = new Date();
     d.setMonth(d.getMonth() - 2);
     return d.toISOString().split('T')[0];
   });
-  const [toDate, setToDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [toDate, setToDate] = useState<string>(() => {
+    const stored = sessionStorage.getItem('pnl_toDate');
+    if (stored) return stored;
+    return new Date().toISOString().split('T')[0];
+  });
   const [dateRangeMatches, setDateRangeMatches] = useState<MatchedTrade[]>([]);
   const [dateRangeLoading, setDateRangeLoading] = useState(false);
 
-  // Fetch matched trades from DB by date range (used only as display filter)
+  // Fetch matched trades from DB by date range
   const loadDateRangeMatches = useCallback(async () => {
     setDateRangeLoading(true);
     try {
@@ -138,25 +144,48 @@ export default function PnLTab() {
     loadDateRangeMatches();
   }, [loadDateRangeMatches]);
 
-  // Calculate P&L using ALL matched trades (full correct computation)
+  // Calculate P&L using date-range matched trades for P&L numbers,
+  // but use ALL matched trades for actioned status determination
   const recalculate = useCallback(() => {
-    const primary = calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings, 'primary');
-    const secondary = calculatePnL(state.alerts, state.matchedTrades, state.zerodhaHoldings, 'secondary');
-    dispatch({ type: 'SET_PNL_ENTRIES', payload: [...primary, ...secondary] });
-  }, [state.alerts, state.matchedTrades, state.zerodhaHoldings, dispatch]);
+    const matchesForPnl = dateRangeMatches.length > 0 ? dateRangeMatches : state.matchedTrades;
+
+    // Calculate P&L with date-range trades (controls realised/unrealised numbers)
+    const primaryPnl = calculatePnL(state.alerts, matchesForPnl, state.zerodhaHoldings, 'primary');
+    const secondaryPnl = calculatePnL(state.alerts, matchesForPnl, state.zerodhaHoldings, 'secondary');
+
+    // Calculate actioned status from ALL matched trades (not date-filtered)
+    const allMatchedAlertIds = new Set(state.matchedTrades.map((m) => m.alertId));
+
+    // Fix actioned: use all-time matched alert IDs per ticker+strategy
+    const fixedEntries = [...primaryPnl, ...secondaryPnl].map((entry) => ({
+      ...entry,
+      actioned: state.alerts.some(
+        (a) =>
+          a.Ticker.toUpperCase() === entry.ticker.toUpperCase() &&
+          (a.Strategy || '') === (entry.strategy || '') &&
+          allMatchedAlertIds.has(a.id)
+      ),
+    }));
+
+    dispatch({ type: 'SET_PNL_ENTRIES', payload: fixedEntries });
+  }, [state.alerts, state.matchedTrades, dateRangeMatches, state.zerodhaHoldings, dispatch]);
 
   useEffect(() => {
     if (state.alerts.length > 0 || state.matchedTrades.length > 0) {
       recalculate();
     }
-  }, [state.alerts.length, state.matchedTrades.length, state.zerodhaHoldings.length, recalculate]);
+  }, [state.alerts.length, state.matchedTrades.length, dateRangeMatches.length, state.zerodhaHoldings.length, recalculate]);
 
   const combinedEntries = state.pnlEntries;
 
-  // Build a set of tickers that had matched trade activity in the date range
-  const dateRangeTickerSet = useMemo(() => {
-    return new Set(dateRangeMatches.map((t) => t.ticker.toUpperCase()));
-  }, [dateRangeMatches]);
+  // Summaries — computed from date-range-filtered entries
+  const primarySummary = summarise(combinedEntries.filter((e) => e.accountType === 'primary'));
+  const secondarySummary = summarise(combinedEntries.filter((e) => e.accountType === 'secondary'));
+  const combinedSummary = summarise(
+    state.globalTickerFilter
+      ? combinedEntries.filter((e) => e.ticker.toUpperCase().includes(state.globalTickerFilter.toUpperCase()))
+      : combinedEntries
+  );
 
   // Select active entries based on portfolio toggle
   let baseEntries: PnLEntry[];
@@ -176,17 +205,9 @@ export default function PnLTab() {
   const actionedEntries = entries.filter((e) => e.actioned);
   const nonActionedEntries = entries.filter((e) => !e.actioned);
 
-  // Summaries — always use full entries (not date-filtered)
-  const primarySummary = summarise(combinedEntries.filter((e) => e.accountType === 'primary'));
-  const secondarySummary = summarise(combinedEntries.filter((e) => e.accountType === 'secondary'));
-  const combinedSummary = summarise(
-    state.globalTickerFilter
-      ? combinedEntries.filter((e) => e.ticker.toUpperCase().includes(state.globalTickerFilter.toUpperCase()))
-      : combinedEntries
-  );
   const activeSummary = summarise(entries);
 
-  // Chart data — uses entries (full data, respects portfolio/actioned/ticker filters)
+  // Chart data
   const chartData = entries.map((e) => ({
     ticker: e.ticker,
     realised: e.realisedPnl,
@@ -209,15 +230,15 @@ export default function PnLTab() {
     { name: 'Non-Actioned', value: nonActionedEntries.length, fill: '#ff9800' },
   ].filter((d) => d.value > 0);
 
-  // Detailed P&L entries — filtered by date range (only tickers with activity in range)
-  const detailedEntries = useMemo(() => {
-    if (dateRangeTickerSet.size === 0) return entries;
-    return entries.filter((e) => dateRangeTickerSet.has(e.ticker.toUpperCase()));
-  }, [entries, dateRangeTickerSet]);
+  // Detailed P&L: only tickers with matched trade activity in date range
+  const dateRangeTickerSet = new Set(dateRangeMatches.map((t) => t.ticker.toUpperCase()));
+  const detailedEntries = dateRangeTickerSet.size > 0
+    ? entries.filter((e) => dateRangeTickerSet.has(e.ticker.toUpperCase()))
+    : entries;
 
   return (
     <Box>
-      {/* ── Portfolio-level Summary Cards (always visible) ────────── */}
+      {/* ── Portfolio-level Summary Cards ────────────────────────── */}
       <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
         <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>
           Portfolio P&L Overview
@@ -226,6 +247,35 @@ export default function PnLTab() {
         <SummaryCards label="🔵 Secondary Portfolio" s={secondarySummary} />
         <Divider sx={{ my: 2 }} />
         <SummaryCards label="📊 Combined" s={combinedSummary} />
+      </Paper>
+
+      {/* ── Date Range Filter ────────────────────────────────── */}
+      <Paper variant="outlined" sx={{ p: 2, mb: 2, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+        <Typography variant="subtitle2" fontWeight={600}>Date Range:</Typography>
+        <TextField
+          type="date"
+          size="small"
+          label="From Date"
+          value={fromDate}
+          onChange={(e) => { setFromDate(e.target.value); sessionStorage.setItem('pnl_fromDate', e.target.value); }}
+          InputLabelProps={{ shrink: true }}
+          sx={{ width: 160 }}
+        />
+        <TextField
+          type="date"
+          size="small"
+          label="To Date"
+          value={toDate}
+          onChange={(e) => { setToDate(e.target.value); sessionStorage.setItem('pnl_toDate', e.target.value); }}
+          InputLabelProps={{ shrink: true }}
+          sx={{ width: 160 }}
+        />
+        {dateRangeLoading && (
+          <Typography variant="caption" color="text.secondary">Loading...</Typography>
+        )}
+        <Typography variant="caption" color="text.secondary">
+          {dateRangeMatches.length} matched trades in this period
+        </Typography>
       </Paper>
 
       {/* ── Portfolio Toggle + Actioned Filter + Refresh ──────────── */}
@@ -367,35 +417,10 @@ export default function PnLTab() {
           </TableContainer>
 
           {/* ── Detailed P&L Table ───────────────────────────────── */}
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1 }}>
-            <Typography variant="subtitle1" fontWeight={600}>
-              Detailed P&L {portfolioView !== 'combined' && `(${portfolioView})`}
-            </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <TextField
-                type="date"
-                size="small"
-                label="From Date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                InputLabelProps={{ shrink: true }}
-                sx={{ width: 160 }}
-              />
-              <TextField
-                type="date"
-                size="small"
-                label="To Date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                InputLabelProps={{ shrink: true }}
-                sx={{ width: 160 }}
-              />
-              {dateRangeLoading && (
-                <Typography variant="caption" color="text.secondary">Loading...</Typography>
-              )}
-            </Box>
-          </Box>
-          <TableContainer component={Paper} variant="outlined" sx={{ opacity: dateRangeLoading ? 0.5 : 1 }}>
+          <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>
+            Detailed P&L {portfolioView !== 'combined' && `(${portfolioView})`} ({detailedEntries.length})
+          </Typography>
+          <TableContainer component={Paper} variant="outlined">
             <Table size="small">
               <TableHead>
                 <TableRow sx={{ bgcolor: 'grey.100' }}>
