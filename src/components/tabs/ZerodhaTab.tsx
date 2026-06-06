@@ -21,6 +21,11 @@ import {
   ToggleButtonGroup,
   ToggleButton,
   TextField, TableSortLabel,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  SelectChangeEvent,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -30,6 +35,8 @@ import LoginIcon from '@mui/icons-material/Login';
 import LogoutIcon from '@mui/icons-material/Logout';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import NavigateBeforeIcon from '@mui/icons-material/NavigateBefore';
+import NavigateNextIcon from '@mui/icons-material/NavigateNext';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppContext } from '../../context/AppContext';
 import { ZerodhaOrder, ZerodhaHolding } from '../../types';
@@ -42,6 +49,7 @@ import {
   fetchSyncMeta,
   saveOrders,
   saveHoldings,
+  fetchOrdersPaginated,
   ZerodhaStatus,
   ZerodhaStatusAll,
 } from '../../services/apiService';
@@ -147,6 +155,11 @@ export default function ZerodhaTab() {
   const [fromDate, setFromDate] = useState<string>('');
   const [lastSyncDate, setLastSyncDate] = useState<string | null>(null);
   const [holdingsSortDir, setHoldingsSortDir] = useState<'asc' | 'desc'>('desc');
+  const [ordersPage, setOrdersPage] = useState(0);
+  const [ordersPerPage, setOrdersPerPage] = useState(20);
+  const [displayOrders, setDisplayOrders] = useState<ZerodhaOrder[]>([]);
+  const [totalOrdersDbCount, setTotalOrdersDbCount] = useState(0);
+  const [ordersPageLoading, setOrdersPageLoading] = useState(false);
 
   // Derived kiteStatus from allStatus for the active account
   const kiteStatus: ZerodhaStatus | null = allStatus ? allStatus[activeAccount] : null;
@@ -316,12 +329,63 @@ export default function ZerodhaTab() {
     await Promise.all([handleSyncOrders(), handleSyncHoldings()]);
   };
 
-  const filteredOrders = (state.globalTickerFilter
-    ? state.zerodhaOrders.filter((o) =>
-        o.ticker.toUpperCase().includes(state.globalTickerFilter.toUpperCase())
-      )
-    : state.zerodhaOrders
-  ).filter((o) => !o.accountType || o.accountType === activeAccount);
+  const isOrdersSearchActive = !!state.globalTickerFilter;
+
+  // --- Server-side pagination for orders: fetch page from DB when no search is active ---
+  useEffect(() => {
+    if (isOrdersSearchActive) return;
+    let cancelled = false;
+    const loadOrdersPage = async () => {
+      setOrdersPageLoading(true);
+      try {
+        const data = await fetchOrdersPaginated(ordersPage, ordersPerPage, activeAccount);
+        if (!cancelled) {
+          setDisplayOrders(data.orders);
+          setTotalOrdersDbCount(data.total);
+        }
+      } catch (err) {
+        console.error('Failed to fetch paginated orders:', err);
+      } finally {
+        if (!cancelled) setOrdersPageLoading(false);
+      }
+    };
+    loadOrdersPage();
+    return () => { cancelled = true; };
+  }, [ordersPage, ordersPerPage, activeAccount, isOrdersSearchActive, state.zerodhaOrders.length]);
+
+  // Reset page when search or account changes
+  useEffect(() => {
+    setOrdersPage(0);
+  }, [state.globalTickerFilter, activeAccount]);
+
+  // --- Client-side search: filter from in-memory state.zerodhaOrders ---
+  const clientFilteredOrders = isOrdersSearchActive
+    ? state.zerodhaOrders
+        .filter((o) => o.ticker.toUpperCase().includes(state.globalTickerFilter.toUpperCase()))
+        .filter((o) => !o.accountType || o.accountType === activeAccount)
+    : [];
+
+  // Determine what to show in the orders table
+  let tableOrders: ZerodhaOrder[];
+  let totalOrdersCount: number;
+
+  if (isOrdersSearchActive) {
+    const sorted = [...clientFilteredOrders].sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+    totalOrdersCount = sorted.length;
+    tableOrders = sorted.slice(ordersPage * ordersPerPage, ordersPage * ordersPerPage + ordersPerPage);
+  } else {
+    totalOrdersCount = totalOrdersDbCount;
+    tableOrders = displayOrders;
+  }
+
+  const totalOrdersPages = Math.ceil(totalOrdersCount / ordersPerPage);
+
+  const handleOrdersPerPageChange = (event: SelectChangeEvent<number>) => {
+    setOrdersPerPage(Number(event.target.value));
+    setOrdersPage(0);
+  };
 
   const filteredHoldings = (state.globalTickerFilter
     ? state.zerodhaHoldings.filter((h) =>
@@ -424,7 +488,7 @@ export default function ZerodhaTab() {
         <Card sx={{ flex: 1 }}>
           <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
             <Typography variant="caption" color="text.secondary">Total Orders ({activeAccount})</Typography>
-            <Typography variant="h5" fontWeight={700}>{filteredOrders.length}</Typography>
+            <Typography variant="h5" fontWeight={700}>{totalOrdersCount}</Typography>
           </CardContent>
         </Card>
         <Card sx={{ flex: 1 }}>
@@ -634,14 +698,22 @@ export default function ZerodhaTab() {
         </Box>
       </Box>
 
-      {filteredOrders.length === 0 ? (
+      {totalOrdersCount === 0 && !ordersPageLoading ? (
         <Alert severity="info" sx={{ mb: 3 }}>
-          {kiteStatus?.connected
-            ? 'No orders yet. Click "Sync from Kite" to fetch today\'s orders from Zerodha.'
-            : 'No orders imported. Connect Zerodha above or click "Manual Import" to paste order data.'}
+          {isOrdersSearchActive
+            ? `No orders found matching "${state.globalTickerFilter}".`
+            : kiteStatus?.connected
+              ? 'No orders yet. Click "Sync from Kite" to fetch today\'s orders from Zerodha.'
+              : 'No orders imported. Connect Zerodha above or click "Manual Import" to paste order data.'}
         </Alert>
       ) : (
-        <TableContainer component={Paper} variant="outlined" sx={{ mb: 4 }}>
+        <>
+        {ordersPageLoading && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+            <CircularProgress size={24} />
+          </Box>
+        )}
+        <TableContainer component={Paper} variant="outlined" sx={{ mb: 1, opacity: ordersPageLoading ? 0.5 : 1 }}>
           <Table size="small">
             <TableHead>
               <TableRow sx={{ bgcolor: 'grey.100' }}>
@@ -659,8 +731,7 @@ export default function ZerodhaTab() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {filteredOrders
-                .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+              {tableOrders
                 .map((order) => (
                   <TableRow key={order.id} hover>
                     <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
@@ -705,6 +776,52 @@ export default function ZerodhaTab() {
             </TableBody>
           </Table>
         </TableContainer>
+
+        {/* Orders Pagination Controls */}
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 4, flexWrap: 'wrap', gap: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <FormControl size="small" sx={{ minWidth: 130 }}>
+              <InputLabel id="orders-per-page-label">Per Page</InputLabel>
+              <Select
+                labelId="orders-per-page-label"
+                value={ordersPerPage}
+                label="Per Page"
+                onChange={handleOrdersPerPageChange}
+              >
+                <MenuItem value={20}>20</MenuItem>
+                <MenuItem value={50}>50</MenuItem>
+                <MenuItem value={100}>100</MenuItem>
+              </Select>
+            </FormControl>
+            <Typography variant="body2" color="text.secondary">
+              Showing {totalOrdersCount === 0 ? 0 : ordersPage * ordersPerPage + 1}–{Math.min((ordersPage + 1) * ordersPerPage, totalOrdersCount)} of {totalOrdersCount} orders
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<NavigateBeforeIcon />}
+              onClick={() => setOrdersPage((p: number) => Math.max(0, p - 1))}
+              disabled={ordersPage === 0}
+            >
+              Prev
+            </Button>
+            <Typography variant="body2" fontWeight={600}>
+              Page {totalOrdersPages === 0 ? 0 : ordersPage + 1} of {totalOrdersPages}
+            </Typography>
+            <Button
+              size="small"
+              variant="outlined"
+              endIcon={<NavigateNextIcon />}
+              onClick={() => setOrdersPage((p: number) => Math.min(totalOrdersPages - 1, p + 1))}
+              disabled={ordersPage >= totalOrdersPages - 1}
+            >
+              Next
+            </Button>
+          </Box>
+        </Box>
+        </>
       )}
 
       {/* Holdings Section */}
