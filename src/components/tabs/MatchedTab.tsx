@@ -29,7 +29,7 @@ import NavigateNextIcon from '@mui/icons-material/NavigateNext';
 import Tooltip from '@mui/material/Tooltip';
 import { useAppContext } from '../../context/AppContext';
 import { matchTradesWithAlerts } from '../../services/tradeMatchingService';
-import { appendMatchedTrades, fetchMatchedTradesPaginated } from '../../services/apiService';
+import { appendMatchedTrades, fetchMatchedTradesPaginated, saveMatchedTrades } from '../../services/apiService';
 import { MatchedTrade, TradingViewAlert, ZerodhaOrder } from '../../types';
 
 const matchTypeLabels: Record<string, string> = {
@@ -127,7 +127,7 @@ export default function MatchedTab() {
     setMatching(true);
     try {
       const pendingAlerts = state.alerts.filter((a) => a.status === 'PENDING');
-      const { newMatches, updatedAlerts } = matchTradesWithAlerts(
+      const { newMatches, updatedAlerts, clearedTrades } = matchTradesWithAlerts(
         pendingAlerts,
         state.zerodhaOrders,
         state.zerodhaHoldings,
@@ -137,9 +137,31 @@ export default function MatchedTab() {
       if (newMatches.length > 0) {
         // Persist new matches via POST (append-only)
         await appendMatchedTrades(newMatches);
-        // Update local state: merge new matches with existing
-        dispatch({ type: 'SET_MATCHED_TRADES', payload: [...state.matchedTrades, ...newMatches] });
       }
+
+      // If there are cleared trades (exit amounts zeroed out), persist via PUT (upsert)
+      if (clearedTrades.length > 0) {
+        await saveMatchedTrades(clearedTrades);
+      }
+
+      // Update local state: apply cleared trades first, then add new matches
+      let updatedMatchedTrades = [...state.matchedTrades];
+
+      if (clearedTrades.length > 0) {
+        const clearedIds = new Set(clearedTrades.map((t) => t.id));
+        updatedMatchedTrades = updatedMatchedTrades.map((t) =>
+          clearedIds.has(t.id)
+            ? { ...t, partialExitAmount: 0, actualPartialBuyAmount: 0, fullExitAmount: 0, actualFullBuyAmount: 0 }
+            : t
+        );
+      }
+
+      if (newMatches.length > 0) {
+        updatedMatchedTrades = [...updatedMatchedTrades, ...newMatches];
+      }
+
+      dispatch({ type: 'SET_MATCHED_TRADES', payload: updatedMatchedTrades });
+
       // Merge updated pending alerts back with non-pending ones
       const nonPendingAlerts = state.alerts.filter((a) => a.status !== 'PENDING');
       dispatch({ type: 'SET_ALERTS', payload: [...nonPendingAlerts, ...updatedAlerts] });

@@ -12,9 +12,13 @@ export function matchTradesWithAlerts(
   orders: ZerodhaOrder[],
   holdings: ZerodhaHolding[],
   existingMatches: MatchedTrade[] = []
-): { newMatches: MatchedTrade[]; updatedAlerts: TradingViewAlert[] } {
+): { newMatches: MatchedTrade[]; updatedAlerts: TradingViewAlert[]; clearedTrades: MatchedTrade[] } {
   const newMatches: MatchedTrade[] = [];
   const updatedAlerts = [...alerts];
+  const clearedTrades: MatchedTrade[] = [];
+
+  // Track which ticker+account combos have already had their exits cleared in this run
+  const alreadyClearedKeys = new Set<string>();
 
   // Collect all already-matched order IDs (globally, across both portfolios)
   const alreadyMatchedOrderIds = new Set(existingMatches.map((m) => m.zerodhaOrderId));
@@ -74,6 +78,33 @@ export function matchTradesWithAlerts(
 
         const avgBuyPrice = holding ? holding.averagePrice : undefined;
 
+        // When a BUY/ADD is actioned, clear previous exit amounts for this ticker+account
+        if (matchType === 'FULL_ENTRY' || matchType === 'PARTIAL_ENTRY') {
+          const clearKey = `${alert.Ticker.toUpperCase()}|${account}`;
+          if (!alreadyClearedKeys.has(clearKey)) {
+            alreadyClearedKeys.add(clearKey);
+            // Find existing matched trades with exit amounts for this ticker+account
+            const tradesToClear = existingMatches.filter(
+              (m) =>
+                m.ticker.toUpperCase() === alert.Ticker.toUpperCase() &&
+                m.accountType === account &&
+                ((m.partialExitAmount && m.partialExitAmount > 0) ||
+                 (m.actualPartialBuyAmount && m.actualPartialBuyAmount > 0) ||
+                 (m.fullExitAmount && m.fullExitAmount > 0) ||
+                 (m.actualFullBuyAmount && m.actualFullBuyAmount > 0))
+            );
+            for (const t of tradesToClear) {
+              clearedTrades.push({
+                ...t,
+                partialExitAmount: 0,
+                actualPartialBuyAmount: 0,
+                fullExitAmount: 0,
+                actualFullBuyAmount: 0,
+              });
+            }
+          }
+        }
+
         // Compute exit amounts based on match type
         let partialExitAmount = 0;
         let actualPartialBuyAmount = 0;
@@ -124,7 +155,7 @@ export function matchTradesWithAlerts(
     }
   }
 
-  return { newMatches, updatedAlerts };
+  return { newMatches, updatedAlerts, clearedTrades };
 }
 
 export function calculatePnL(

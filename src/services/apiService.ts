@@ -26,6 +26,9 @@ function clearToken(): void {
   sessionStorage.removeItem('matched_perPage');
   sessionStorage.removeItem('unmatchedAlerts_perPage');
   sessionStorage.removeItem('unmatchedOrders_perPage');
+  // Clear P&L date range on logout
+  sessionStorage.removeItem('pnl_fromDate');
+  sessionStorage.removeItem('pnl_toDate');
 }
 
 function authHeaders(): Record<string, string> {
