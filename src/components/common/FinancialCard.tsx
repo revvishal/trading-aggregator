@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Card,
   CardContent,
@@ -15,6 +15,7 @@ import {
   Tabs,
   Tab,
   Tooltip,
+  CircularProgress,
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
@@ -23,6 +24,7 @@ import { QuarterlyFinancials, AnalystRecommendation } from '../../types';
 import ScoreBadge from './ScoreBadge';
 import TradingViewFundamentalWidget from '../widgets/TradingViewFundamentalWidget';
 import TradingViewRecommendationWidget from '../widgets/TradingViewRecommendationWidget';
+import { fetchTickerFinancials } from '../../services/apiService';
 
 const TRADINGVIEW_EXCHANGE = 'NSE';
 
@@ -54,10 +56,51 @@ function ColoredValue({ value, suffix = '' }: { value: number; suffix?: string }
 export default function FinancialCard({ financials, recommendation, loading, ticker }: FinancialCardProps) {
   const [activeTab, setActiveTab] = useState(0);
 
-  if (loading) {
+  // Live data pulled directly from the ticker_financials table (via GET /api/financials/:ticker)
+  const [liveFinancials, setLiveFinancials] = useState<QuarterlyFinancials | null>(null);
+  const [liveRecommendation, setLiveRecommendation] = useState<AnalystRecommendation | null>(null);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const [liveError, setLiveError] = useState(false);
+
+  const resolvedTicker = ticker || financials?.ticker || '';
+
+  // Pull straight from the ticker_financials table whenever the ticker changes
+  // (or the tab is opened), rather than relying solely on whatever the alert row cached.
+  useEffect(() => {
+    if (!resolvedTicker) return;
+    let cancelled = false;
+
+    setLiveLoading(true);
+    setLiveError(false);
+    fetchTickerFinancials(resolvedTicker)
+      .then((res) => {
+        if (cancelled) return;
+        setLiveFinancials(res.financials || null);
+        setLiveRecommendation(res.analystRecommendation || null);
+      })
+      .catch(() => {
+        if (!cancelled) setLiveError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLiveLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [resolvedTicker]);
+
+  // Prefer live ticker_financials data; fall back to what's cached on the alert row
+  // (props passed in from SignalsTab / alerts.financials & alerts.analyst_recommendation columns).
+  const effectiveFinancials = liveFinancials ?? financials ?? null;
+  const effectiveRecommendation = liveRecommendation ?? recommendation ?? null;
+  const isLoading = loading || liveLoading;
+
+  if (isLoading && !effectiveFinancials && !effectiveRecommendation) {
     return (
       <Card sx={{ mt: 1, bgcolor: 'grey.50' }}>
-        <CardContent>
+        <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <CircularProgress size={16} />
           <Typography variant="body2" color="text.secondary">
             Loading financial data...
           </Typography>
@@ -66,9 +109,7 @@ export default function FinancialCard({ financials, recommendation, loading, tic
     );
   }
 
-  if (!financials && !recommendation && !ticker) return null;
-
-  const resolvedTicker = ticker || financials?.ticker || '';
+  if (!effectiveFinancials && !effectiveRecommendation && !resolvedTicker) return null;
 
   return (
     <Card sx={{ mt: 1, bgcolor: 'grey.50', border: '1px solid', borderColor: 'grey.200' }}>
@@ -84,27 +125,34 @@ export default function FinancialCard({ financials, recommendation, loading, tic
           <Tab label="🎯 TradingView Technical Analysis" />
         </Tabs>
 
-        {/* Tab 0: Quarterly Results from CSV data */}
+        {/* Tab 0: Quarterly Results — pulled live from ticker_financials, falls back to alerts columns */}
         {activeTab === 0 && (
           <>
-            {financials && financials.quarters && financials.quarters.length > 0 ? (
+            {liveError && !financials && (
+              <Typography variant="caption" color="warning.main" sx={{ display: 'block', mb: 1 }}>
+                Couldn't refresh from the financials cache — showing last-known data from this signal.
+              </Typography>
+            )}
+
+            {effectiveFinancials && effectiveFinancials.quarters && effectiveFinancials.quarters.length > 0 ? (
               <>
                 {/* Header with company name and summary */}
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                   <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                    📊 {financials.company ? `${financials.company} (${financials.ticker})` : financials.ticker}
+                    📊 {effectiveFinancials.company ? `${effectiveFinancials.company} (${effectiveFinancials.ticker})` : effectiveFinancials.ticker}
                   </Typography>
-                  {financials.fetchedAt && (
-                    <Tooltip title={`Data loaded: ${new Date(financials.fetchedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`}>
+                  {effectiveFinancials.fetchedAt && (
+                    <Tooltip title={`Data loaded: ${new Date(effectiveFinancials.fetchedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`}>
                       <InfoOutlinedIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Tooltip>
                   )}
+                  {liveLoading && <CircularProgress size={12} />}
                 </Box>
 
                 {/* Summary chip */}
-                {financials.summary && (
+                {effectiveFinancials.summary && (
                   <Chip
-                    label={financials.summary}
+                    label={effectiveFinancials.summary}
                     size="small"
                     variant="outlined"
                     color="info"
@@ -118,7 +166,7 @@ export default function FinancialCard({ financials, recommendation, loading, tic
                     <TableHead>
                       <TableRow>
                         <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem', minWidth: 120 }}>Metric</TableCell>
-                        {financials.quarters.map((q) => (
+                        {effectiveFinancials.quarters.map((q) => (
                           <TableCell key={q.quarter} align="right" sx={{ fontWeight: 600, fontSize: '0.75rem' }}>
                             {q.quarter}
                           </TableCell>
@@ -128,7 +176,7 @@ export default function FinancialCard({ financials, recommendation, loading, tic
                     <TableBody>
                       <TableRow>
                         <TableCell sx={{ fontSize: '0.75rem' }}>Revenue (B)</TableCell>
-                        {financials.quarters.map((q) => (
+                        {effectiveFinancials.quarters.map((q) => (
                           <TableCell key={q.quarter} align="right">
                             <Typography variant="body2" sx={{ fontWeight: 500, whiteSpace: 'nowrap' }}>{q.revenue.toFixed(2)}</Typography>
                           </TableCell>
@@ -136,7 +184,7 @@ export default function FinancialCard({ financials, recommendation, loading, tic
                       </TableRow>
                       <TableRow>
                         <TableCell sx={{ fontSize: '0.75rem' }}>QoQ Rev Chg (%)</TableCell>
-                        {financials.quarters.map((q) => (
+                        {effectiveFinancials.quarters.map((q) => (
                           <TableCell key={q.quarter} align="right">
                             <ColoredValue value={q.revenueChange} suffix="%" />
                           </TableCell>
@@ -144,7 +192,7 @@ export default function FinancialCard({ financials, recommendation, loading, tic
                       </TableRow>
                       <TableRow>
                         <TableCell sx={{ fontSize: '0.75rem' }}>EPS YoY (%)</TableCell>
-                        {financials.quarters.map((q) => (
+                        {effectiveFinancials.quarters.map((q) => (
                           <TableCell key={q.quarter} align="right">
                             <ColoredValue value={q.epsYoY} suffix="%" />
                           </TableCell>
@@ -152,7 +200,7 @@ export default function FinancialCard({ financials, recommendation, loading, tic
                       </TableRow>
                       <TableRow>
                         <TableCell sx={{ fontSize: '0.75rem' }}>EBITDA (B)</TableCell>
-                        {financials.quarters.map((q) => (
+                        {effectiveFinancials.quarters.map((q) => (
                           <TableCell key={q.quarter} align="right">
                             <Typography variant="body2" sx={{ fontWeight: 500, whiteSpace: 'nowrap' }}>{q.ebitda.toFixed(2)}</Typography>
                           </TableCell>
@@ -160,7 +208,7 @@ export default function FinancialCard({ financials, recommendation, loading, tic
                       </TableRow>
                       <TableRow>
                         <TableCell sx={{ fontSize: '0.75rem' }}>Op Margin (%)</TableCell>
-                        {financials.quarters.map((q) => (
+                        {effectiveFinancials.quarters.map((q) => (
                           <TableCell key={q.quarter} align="right">
                             <ColoredValue value={q.opMargin} suffix="%" />
                           </TableCell>
@@ -181,18 +229,18 @@ export default function FinancialCard({ financials, recommendation, loading, tic
               </Box>
             )}
 
-            {recommendation && (
+            {effectiveRecommendation && (
               <>
                 <Divider sx={{ my: 2 }} />
                 <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 600 }}>
-                  🎯 Analyst Recommendations — {recommendation.totalAnalysts} Analysts
+                  🎯 Analyst Recommendations — {effectiveRecommendation.totalAnalysts} Analysts
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1.5 }}>
                   <Typography variant="body2">Consolidated:</Typography>
-                  <ScoreBadge score={recommendation.consolidatedScore} label={recommendation.consolidatedRating} />
+                  <ScoreBadge score={effectiveRecommendation.consolidatedScore} label={effectiveRecommendation.consolidatedRating} />
                 </Box>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                  {recommendation.ratings.map((r, i) => (
+                  {effectiveRecommendation.ratings.map((r, i) => (
                     <Chip
                       key={i}
                       label={`${r.firm}: ${r.rating} (₹${r.targetPrice})`}
