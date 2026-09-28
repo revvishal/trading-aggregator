@@ -42,8 +42,8 @@ app.use('/api/zerodha', zerodhaRouter);
 // Data CRUD routes (all need JWT)
 app.use('/api/data', authMiddleware, dataRouter);
 
-// Financials cache routes (need JWT)
-app.use('/api/financials', authMiddleware, financialsRouter);
+// Financials cache routes (don't need JWT)
+app.use('/api/financials', financialsRouter);
 
 // Initialize DB and start server
 initDatabase()
