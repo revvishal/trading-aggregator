@@ -49,8 +49,7 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppContext } from '../../context/AppContext';
 import { TradingViewAlert } from '../../types';
-import { getFinancialData, getAnalystRecommendation } from '../../services/financialService';
-import { fetchWebhookAlerts, fetchWebhookAlertCount, checkServerHealth, uploadFinancialsCSV, fetchExitSummary, fetchAlertsPaginated } from '../../services/apiService';
+import { fetchWebhookAlerts, fetchWebhookAlertCount, checkServerHealth, uploadFinancialsCSV, fetchExitSummary, fetchAlertsPaginated, fetchTickerFinancials } from '../../services/apiService';
 import JsonInputModal from '../common/JsonInputModal';
 import FinancialCard from '../common/FinancialCard';
 
@@ -106,6 +105,8 @@ export default function SignalsTab() {
   const [displayAlerts, setDisplayAlerts] = useState<TradingViewAlert[]>([]);
   const [totalDbCount, setTotalDbCount] = useState(0);
   const [pageLoading, setPageLoading] = useState(false);
+  const [financialsByTicker, setFinancialsByTicker] = useState<Record<string, any>>({});
+  const [recommendationByTicker, setRecommendationByTicker] = useState<Record<string, any>>({});
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const lastFetchRef = useRef<string>(new Date().toISOString());
 
@@ -249,18 +250,16 @@ export default function SignalsTab() {
   const fetchFinancials = useCallback(async (alert: TradingViewAlert) => {
     setLoadingFinancials((prev) => new Set(prev).add(alert.id));
     try {
-      const [financials, recommendation] = await Promise.all([
-        getFinancialData(alert.Ticker),
-        getAnalystRecommendation(alert.Ticker),
-      ]);
-      dispatch({
-        type: 'UPDATE_ALERT',
-        payload: {
-          ...alert,
-          financials: financials || undefined,
-          analystRecommendation: recommendation || undefined,
-        },
-      });
+      const tickerKey = alert.Ticker.toUpperCase();
+      const cached = await fetchTickerFinancials(alert.Ticker);
+      setFinancialsByTicker((prev) => ({
+        ...prev,
+        [tickerKey]: cached.financials || null,
+      }));
+      setRecommendationByTicker((prev) => ({
+        ...prev,
+        [tickerKey]: cached.analystRecommendation || null,
+      }));
     } catch (e) {
       console.error('Failed to fetch financials', e);
     } finally {
@@ -270,7 +269,7 @@ export default function SignalsTab() {
         return next;
       });
     }
-  }, [dispatch]);
+  }, []);
 
   const handleCsvUpload = async () => {
     if (!csvText.trim()) return;
@@ -331,7 +330,8 @@ export default function SignalsTab() {
         next.add(id);
         // Auto-fetch financials if not already loaded
         const alert = tableAlerts.find((a) => a.id === id) || state.alerts.find((a) => a.id === id);
-        if (alert && !alert.financials && !loadingFinancials.has(id)) {
+        const tickerKey = alert?.Ticker.toUpperCase() || '';
+        if (alert && !financialsByTicker[tickerKey] && !recommendationByTicker[tickerKey] && !loadingFinancials.has(id)) {
           fetchFinancials(alert);
         }
         // Fetch exit summary for this ticker
@@ -543,19 +543,23 @@ export default function SignalsTab() {
                         />
                       </TableCell>
                       <TableCell>
-                        {alert.analystRecommendation && (
-                          <Chip
-                            label={`${alert.analystRecommendation.consolidatedScore.toFixed(1)}`}
-                            size="small"
-                            color={
-                              alert.analystRecommendation.consolidatedScore >= 3.5
-                                ? 'success'
-                                : alert.analystRecommendation.consolidatedScore >= 2.5
-                                ? 'warning'
-                                : 'error'
-                            }
-                          />
-                        )}
+                        {(() => {
+                          const rec = recommendationByTicker[alert.Ticker.toUpperCase()] || alert.analystRecommendation;
+                          if (!rec) return null;
+                          return (
+                            <Chip
+                              label={`${rec.consolidatedScore.toFixed(1)}`}
+                              size="small"
+                              color={
+                                rec.consolidatedScore >= 3.5
+                                  ? 'success'
+                                  : rec.consolidatedScore >= 2.5
+                                  ? 'warning'
+                                  : 'error'
+                              }
+                            />
+                          );
+                        })()}
                       </TableCell>
                       <TableCell align="right">
                         <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
@@ -669,8 +673,8 @@ export default function SignalsTab() {
                               );
                             })()}
                             <FinancialCard
-                              financials={alert.financials}
-                              recommendation={alert.analystRecommendation}
+                              financials={financialsByTicker[alert.Ticker.toUpperCase()] || alert.financials}
+                              recommendation={recommendationByTicker[alert.Ticker.toUpperCase()] || alert.analystRecommendation}
                               loading={loadingFinancials.has(alert.id)}
                               ticker={alert.Ticker}
                             />

@@ -47,9 +47,9 @@ router.put('/alerts', async (req: Request, res: Response) => {
     await client.query('DELETE FROM alerts');
     for (const a of alerts) {
       await client.query(
-        `INSERT INTO alerts (id, timestamp, exchange, close, ticker, order_type, product_type, instrument_type, quantity, strategy, code, status, received_at, financials, analyst_recommendation)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-        [a.id, a.timestamp, a.Exchange, a.Close, a.Ticker, a.OrderType, a.ProductType, a.InstrumentType, a.Quantity, a.Strategy, a.Code, a.status, a.timestamp, JSON.stringify(a.financials || null), JSON.stringify(a.analystRecommendation || null)]
+        `INSERT INTO alerts (id, timestamp, exchange, close, ticker, order_type, product_type, instrument_type, quantity, strategy, code, status, received_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        [a.id, a.timestamp, a.Exchange, a.Close, a.Ticker, a.OrderType, a.ProductType, a.InstrumentType, a.Quantity, a.Strategy, a.Code, a.status, a.timestamp]
       );
     }
     await client.query('COMMIT');
@@ -400,8 +400,6 @@ function rowToAlert(row: any) {
     Strategy: row.strategy,
     Code: row.code,
     status: row.status,
-    financials: row.financials || undefined,
-    analystRecommendation: row.analyst_recommendation || undefined,
   };
 }
 
