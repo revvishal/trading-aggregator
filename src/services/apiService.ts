@@ -126,6 +126,15 @@ export async function saveAlerts(alerts: any[]): Promise<void> {
   await handleResponse(res);
 }
 
+export async function updateAlertNote(alertId: string, note: string | null): Promise<{ id: string; note: string }> {
+  const res = await fetch(`${API_BASE}/api/data/alerts/${encodeURIComponent(alertId)}/note`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ note }),
+  });
+  return handleResponse(res);
+}
+
 export async function fetchOrders(account?: string): Promise<any[]> {
   const params = account ? `?account=${account}` : '';
   const res = await fetch(`${API_BASE}/api/data/orders${params}`, { headers: authHeaders() });

@@ -25,6 +25,7 @@ export async function initDatabase(): Promise<void> {
         strategy TEXT DEFAULT '',
         code TEXT DEFAULT '',
         status TEXT DEFAULT 'PENDING',
+        note TEXT DEFAULT '',
         received_at TIMESTAMPTZ NOT NULL,
         financials JSONB,
         analyst_recommendation JSONB,
@@ -141,6 +142,7 @@ export async function initDatabase(): Promise<void> {
     await client.query(`ALTER TABLE kite_sessions ADD COLUMN IF NOT EXISTS account_type TEXT DEFAULT 'primary'`).catch(() => {});
     await client.query(`ALTER TABLE ticker_financials ADD COLUMN IF NOT EXISTS company TEXT DEFAULT ''`).catch(() => {});
     await client.query(`ALTER TABLE ticker_financials ADD COLUMN IF NOT EXISTS summary TEXT DEFAULT ''`).catch(() => {});
+    await client.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS note TEXT DEFAULT ''`).catch(() => {});
 
     // Seed sync_metadata for both accounts
     await client.query(`INSERT INTO sync_metadata (account_type) VALUES ('primary') ON CONFLICT (account_type) DO NOTHING`).catch(() => {});

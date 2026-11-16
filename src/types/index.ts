@@ -13,6 +13,7 @@ export interface TradingViewAlert {
   Strategy: string;
   Code: string;
   status: 'PENDING' | 'ACTIONED' | 'IGNORED';
+  note?: string;
   financials?: QuarterlyFinancials;
   analystRecommendation?: AnalystRecommendation;
 }
@@ -122,4 +123,3 @@ export interface AppState {
   globalTickerFilter: string;
   activeTab: number;
 }
-

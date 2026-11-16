@@ -37,6 +37,10 @@ import NavigateBeforeIcon from '@mui/icons-material/NavigateBefore';
 import NavigateNextIcon from '@mui/icons-material/NavigateNext';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import EditIcon from '@mui/icons-material/Edit';
+import CheckIcon from '@mui/icons-material/Check';
+import CloseIcon from '@mui/icons-material/Close';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -46,10 +50,11 @@ import SyncIcon from '@mui/icons-material/Sync';
 import WifiIcon from '@mui/icons-material/Wifi';
 import WifiOffIcon from '@mui/icons-material/WifiOff';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import NoteAltOutlinedIcon from '@mui/icons-material/NoteAltOutlined';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppContext } from '../../context/AppContext';
 import { TradingViewAlert } from '../../types';
-import { fetchWebhookAlerts, fetchWebhookAlertCount, checkServerHealth, uploadFinancialsCSV, fetchExitSummary, fetchAlertsPaginated, fetchTickerFinancials } from '../../services/apiService';
+import { fetchWebhookAlerts, fetchWebhookAlertCount, checkServerHealth, uploadFinancialsCSV, fetchExitSummary, fetchAlertsPaginated, fetchTickerFinancials, updateAlertNote } from '../../services/apiService';
 import JsonInputModal from '../common/JsonInputModal';
 import FinancialCard from '../common/FinancialCard';
 
@@ -107,6 +112,11 @@ export default function SignalsTab() {
   const [pageLoading, setPageLoading] = useState(false);
   const [financialsByTicker, setFinancialsByTicker] = useState<Record<string, any>>({});
   const [recommendationByTicker, setRecommendationByTicker] = useState<Record<string, any>>({});
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [noteOverrides, setNoteOverrides] = useState<Record<string, string>>({});
+  const [savingNoteIds, setSavingNoteIds] = useState<Set<string>>(new Set());
+  const [noteErrors, setNoteErrors] = useState<Record<string, string>>({});
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const lastFetchRef = useRef<string>(new Date().toISOString());
 
@@ -166,6 +176,7 @@ export default function SignalsTab() {
             Strategy: item.Strategy || '',
             Code: item.Code || '',
             status: 'PENDING' as const,
+            note: item.note || '',
           }));
 
         if (newAlerts.length > 0) {
@@ -309,6 +320,7 @@ export default function SignalsTab() {
         Strategy: item.Strategy || '',
         Code: item.Code || '',
         status: 'PENDING',
+        note: '',
       }));
 
       dispatch({ type: 'ADD_ALERTS', payload: newAlerts });
@@ -358,6 +370,77 @@ export default function SignalsTab() {
     pending: state.alerts.filter((a) => a.status === 'PENDING').length,
     actioned: state.alerts.filter((a) => a.status === 'ACTIONED').length,
     ignored: state.alerts.filter((a) => a.status === 'IGNORED').length,
+  };
+
+  const getAlertNote = useCallback((alert: TradingViewAlert) => {
+    if (Object.prototype.hasOwnProperty.call(noteOverrides, alert.id)) {
+      return noteOverrides[alert.id] || '';
+    }
+    return alert.note || '';
+  }, [noteOverrides]);
+
+  const applyLocalNote = (alertId: string, note: string) => {
+    setNoteOverrides((prev) => ({ ...prev, [alertId]: note }));
+    setDisplayAlerts((prev) => prev.map((a) => (a.id === alertId ? { ...a, note } : a)));
+  };
+
+  const startEditingNote = (alert: TradingViewAlert) => {
+    setEditingNoteId(alert.id);
+    setNoteDraft(getAlertNote(alert));
+    setNoteErrors((prev) => ({ ...prev, [alert.id]: '' }));
+  };
+
+  const cancelEditingNote = () => {
+    if (editingNoteId) {
+      setNoteErrors((prev) => ({ ...prev, [editingNoteId]: '' }));
+    }
+    setEditingNoteId(null);
+    setNoteDraft('');
+  };
+
+  const saveNote = async (alert: TradingViewAlert) => {
+    const trimmed = noteDraft.trim();
+    if (trimmed.length > 100) {
+      setNoteErrors((prev) => ({ ...prev, [alert.id]: 'Note cannot exceed 100 characters' }));
+      return;
+    }
+    setSavingNoteIds((prev) => new Set(prev).add(alert.id));
+    setNoteErrors((prev) => ({ ...prev, [alert.id]: '' }));
+    try {
+      const result = await updateAlertNote(alert.id, trimmed);
+      applyLocalNote(alert.id, result.note || '');
+      setEditingNoteId(null);
+      setNoteDraft('');
+    } catch (err: any) {
+      setNoteErrors((prev) => ({ ...prev, [alert.id]: err.message || 'Failed to save note' }));
+    } finally {
+      setSavingNoteIds((prev) => {
+        const next = new Set(prev);
+        next.delete(alert.id);
+        return next;
+      });
+    }
+  };
+
+  const deleteNote = async (alert: TradingViewAlert) => {
+    setSavingNoteIds((prev) => new Set(prev).add(alert.id));
+    setNoteErrors((prev) => ({ ...prev, [alert.id]: '' }));
+    try {
+      await updateAlertNote(alert.id, '');
+      applyLocalNote(alert.id, '');
+      if (editingNoteId === alert.id) {
+        setEditingNoteId(null);
+        setNoteDraft('');
+      }
+    } catch (err: any) {
+      setNoteErrors((prev) => ({ ...prev, [alert.id]: err.message || 'Failed to delete note' }));
+    } finally {
+      setSavingNoteIds((prev) => {
+        const next = new Set(prev);
+        next.delete(alert.id);
+        return next;
+      });
+    }
   };
 
   return (
@@ -517,9 +600,29 @@ export default function SignalsTab() {
                         })}
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2" fontWeight={600}>
-                          {alert.Ticker}
-                        </Typography>
+                        {(() => {
+                          const noteText = getAlertNote(alert).trim();
+                          const hasNote = noteText.length > 0;
+                          return (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                              <Typography variant="body2" fontWeight={600}>
+                                {alert.Ticker}
+                              </Typography>
+                              {hasNote && (
+                                <Tooltip title={noteText}>
+                                  <Chip
+                                    icon={<NoteAltOutlinedIcon />}
+                                    label="Note"
+                                    size="small"
+                                    variant="outlined"
+                                    color="info"
+                                    sx={{ height: 22 }}
+                                  />
+                                </Tooltip>
+                              )}
+                            </Box>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell>{alert.Exchange}</TableCell>
                       <TableCell>
@@ -672,6 +775,82 @@ export default function SignalsTab() {
                                 </Box>
                               );
                             })()}
+                            <Box sx={{ mt: 1.25, p: 1, bgcolor: 'grey.50', borderRadius: 1, border: '1px dashed', borderColor: 'grey.300' }}>
+                              <Typography variant="caption" fontWeight={600} sx={{ display: 'block', mb: 0.75 }}>
+                                Notes
+                              </Typography>
+                              {editingNoteId === alert.id ? (
+                                <>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <TextField
+                                      fullWidth
+                                      size="small"
+                                      value={noteDraft}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        if (val.length <= 100) {
+                                          setNoteDraft(val);
+                                          setNoteErrors((prev) => ({ ...prev, [alert.id]: '' }));
+                                        }
+                                      }}
+                                      placeholder="Add short note (max 100 chars)"
+                                      inputProps={{ maxLength: 100 }}
+                                      error={!!noteErrors[alert.id]}
+                                      helperText={noteErrors[alert.id] || `${noteDraft.length}/100`}
+                                    />
+                                    <Tooltip title="Save note">
+                                      <span>
+                                        <IconButton
+                                          size="small"
+                                          color="success"
+                                          onClick={() => saveNote(alert)}
+                                          disabled={savingNoteIds.has(alert.id) || noteDraft.trim().length > 100}
+                                        >
+                                          <CheckIcon fontSize="small" />
+                                        </IconButton>
+                                      </span>
+                                    </Tooltip>
+                                    <Tooltip title="Cancel">
+                                      <IconButton size="small" onClick={cancelEditingNote}>
+                                        <CloseIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </Box>
+                                </>
+                              ) : (
+                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                                  <Typography variant="body2" color={getAlertNote(alert) ? 'text.primary' : 'text.secondary'}>
+                                    {getAlertNote(alert) || 'No note added'}
+                                  </Typography>
+                                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                    <Tooltip title={getAlertNote(alert) ? 'Edit note' : 'Add note'}>
+                                      <IconButton size="small" onClick={() => startEditingNote(alert)}>
+                                        <EditIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                    {!!getAlertNote(alert) && (
+                                      <Tooltip title="Delete note">
+                                        <span>
+                                          <IconButton
+                                            size="small"
+                                            color="error"
+                                            onClick={() => deleteNote(alert)}
+                                            disabled={savingNoteIds.has(alert.id)}
+                                          >
+                                            <DeleteOutlineIcon fontSize="small" />
+                                          </IconButton>
+                                        </span>
+                                      </Tooltip>
+                                    )}
+                                  </Box>
+                                </Box>
+                              )}
+                            </Box>
+                            {noteErrors[alert.id] && editingNoteId !== alert.id && (
+                              <Typography variant="caption" color="error" sx={{ mt: 0.5, display: 'block' }}>
+                                {noteErrors[alert.id]}
+                              </Typography>
+                            )}
                             <FinancialCard
                               financials={financialsByTicker[alert.Ticker.toUpperCase()] || alert.financials}
                               recommendation={recommendationByTicker[alert.Ticker.toUpperCase()] || alert.analystRecommendation}

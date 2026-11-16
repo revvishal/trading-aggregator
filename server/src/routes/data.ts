@@ -46,10 +46,14 @@ router.put('/alerts', async (req: Request, res: Response) => {
     await client.query('BEGIN');
     await client.query('DELETE FROM alerts');
     for (const a of alerts) {
+      const note = typeof a.note === 'string' ? a.note.trim() : '';
+      if (note.length > 100) {
+        throw new Error(`Note exceeds 100 characters for alert id ${a.id}`);
+      }
       await client.query(
-        `INSERT INTO alerts (id, timestamp, exchange, close, ticker, order_type, product_type, instrument_type, quantity, strategy, code, status, received_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-        [a.id, a.timestamp, a.Exchange, a.Close, a.Ticker, a.OrderType, a.ProductType, a.InstrumentType, a.Quantity, a.Strategy, a.Code, a.status, a.timestamp]
+        `INSERT INTO alerts (id, timestamp, exchange, close, ticker, order_type, product_type, instrument_type, quantity, strategy, code, status, note, received_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+        [a.id, a.timestamp, a.Exchange, a.Close, a.Ticker, a.OrderType, a.ProductType, a.InstrumentType, a.Quantity, a.Strategy, a.Code, a.status, note, a.timestamp]
       );
     }
     await client.query('COMMIT');
@@ -59,6 +63,42 @@ router.put('/alerts', async (req: Request, res: Response) => {
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
+  }
+});
+
+router.patch('/alerts/:id/note', async (req: Request, res: Response) => {
+  const id = (req.params.id || '').trim();
+  if (!id) {
+    res.status(400).json({ error: 'Alert id is required' });
+    return;
+  }
+
+  const rawNote = req.body?.note;
+  if (rawNote !== null && rawNote !== undefined && typeof rawNote !== 'string') {
+    res.status(400).json({ error: 'note must be a string or null' });
+    return;
+  }
+
+  const note = typeof rawNote === 'string' ? rawNote.trim() : '';
+  if (note.length > 100) {
+    res.status(400).json({ error: 'Note cannot exceed 100 characters' });
+    return;
+  }
+
+  try {
+    const result = await pool.query(
+      'UPDATE alerts SET note = $1 WHERE id = $2 RETURNING id, note',
+      [note, id]
+    );
+
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: 'Alert not found' });
+      return;
+    }
+
+    res.json({ id: result.rows[0].id, note: result.rows[0].note || '' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -400,6 +440,7 @@ function rowToAlert(row: any) {
     Strategy: row.strategy,
     Code: row.code,
     status: row.status,
+    note: row.note || '',
   };
 }
 

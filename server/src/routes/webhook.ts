@@ -47,13 +47,14 @@ router.post('/', async (req: Request, res: Response) => {
         Strategy: (item.Strategy || '').trim(),
         Code: (item.Code || '').trim(),
         status: 'PENDING',
+        note: '',
         receivedAt,
       };
 
       await pool.query(
-        `INSERT INTO alerts (id, timestamp, exchange, close, ticker, order_type, product_type, instrument_type, quantity, strategy, code, status, received_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-        [alert.id, alert.timestamp, alert.Exchange, alert.Close, alert.Ticker, alert.OrderType, alert.ProductType, alert.InstrumentType, alert.Quantity, alert.Strategy, alert.Code, alert.status, alert.receivedAt]
+        `INSERT INTO alerts (id, timestamp, exchange, close, ticker, order_type, product_type, instrument_type, quantity, strategy, code, status, note, received_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+        [alert.id, alert.timestamp, alert.Exchange, alert.Close, alert.Ticker, alert.OrderType, alert.ProductType, alert.InstrumentType, alert.Quantity, alert.Strategy, alert.Code, alert.status, alert.note, alert.receivedAt]
       );
 
       newAlerts.push(alert);
@@ -100,6 +101,7 @@ router.get('/alerts', async (req: Request, res: Response) => {
       Strategy: row.strategy,
       Code: row.code,
       status: row.status,
+      note: row.note || '',
       receivedAt: row.received_at,
     }));
 
